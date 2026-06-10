@@ -1,0 +1,29 @@
+# credentials — never commit
+.env
+*.env
+
+# build output
+codesentinel
+/codesentinel
+
+# Go test cache / coverage
+*.test
+*.out
+coverage.html
+
+# temp workdirs created by the pipeline
+/tmp/
+codesentinel-sbx-*
+
+# Claude Code local session data
+.claude/
+
+# editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
