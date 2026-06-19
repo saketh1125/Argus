@@ -11,7 +11,7 @@ package services
 import (
 	"context"
 
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/models"
 )
 
 // ---------------------------------------------------------------------------

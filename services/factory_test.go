@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/saketh/codesentinel/config"
+	"github.com/saketh1125/argus/config"
 )
 
 // TestForceMockSelectsAllMocks verifies ForceMock yields the mock adapter for

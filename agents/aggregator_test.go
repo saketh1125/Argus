@@ -3,8 +3,8 @@ package agents
 import (
 	"testing"
 
-	"github.com/saketh/codesentinel/config"
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/config"
+	"github.com/saketh1125/argus/models"
 )
 
 func testConfig() *config.Config {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/saketh/codesentinel/models"
-	"github.com/saketh/codesentinel/services"
+	"github.com/saketh1125/argus/models"
+	"github.com/saketh1125/argus/services"
 )
 
 // fakeLLM is a self-contained LLMClient that returns canned JSON keyed by Task.

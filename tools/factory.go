@@ -5,7 +5,7 @@ package tools
 // present and mock mode is off, otherwise a deterministic mock.
 
 import (
-	"github.com/saketh/codesentinel/config"
+	"github.com/saketh1125/argus/config"
 )
 
 // compile-time interface conformance checks.

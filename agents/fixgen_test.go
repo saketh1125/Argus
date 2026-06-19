@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/models"
 )
 
 func TestFixGeneratorProducesDiff(t *testing.T) {

@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/saketh/codesentinel/config"
-	"github.com/saketh/codesentinel/models"
-	"github.com/saketh/codesentinel/services"
-	"github.com/saketh/codesentinel/tools"
+	"github.com/saketh1125/argus/config"
+	"github.com/saketh1125/argus/models"
+	"github.com/saketh1125/argus/services"
+	"github.com/saketh1125/argus/tools"
 )
 
 // FixGenerator produces ranked fix candidates for each issue. It works SEQUENTIALLY

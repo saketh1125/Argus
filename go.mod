@@ -1,4 +1,4 @@
-module github.com/saketh/codesentinel
+module github.com/saketh1125/argus
 
 go 1.24
 

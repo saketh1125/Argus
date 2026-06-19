@@ -3,8 +3,8 @@ package agents
 import (
 	"sort"
 
-	"github.com/saketh/codesentinel/config"
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/config"
+	"github.com/saketh1125/argus/models"
 )
 
 // Aggregator deduplicates and gates analyst output before fix generation. It uses

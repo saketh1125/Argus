@@ -23,12 +23,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/saketh/codesentinel/agents"
-	"github.com/saketh/codesentinel/config"
-	"github.com/saketh/codesentinel/dashboard"
-	"github.com/saketh/codesentinel/models"
-	"github.com/saketh/codesentinel/services"
-	"github.com/saketh/codesentinel/tools"
+	"github.com/saketh1125/argus/agents"
+	"github.com/saketh1125/argus/config"
+	"github.com/saketh1125/argus/dashboard"
+	"github.com/saketh1125/argus/models"
+	"github.com/saketh1125/argus/services"
+	"github.com/saketh1125/argus/tools"
 )
 
 func main() {
@@ -160,7 +160,8 @@ func run() error {
 		return fmt.Errorf("validation: %w", err)
 	}
 
-	pr := agents.NewPRAgent(gh, cfg, rep)
+	dedup := models.LoadDedupStore(".codesentinel-dedup.json")
+	pr := agents.NewPRAgent(gh, cfg, rep, dedup)
 	report, err := pr.Run(ctx, owner, repo, base, validated, summary)
 	if err != nil {
 		return fmt.Errorf("pr creation: %w", err)

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/models"
 )
 
 // maxRecentIssues caps the "Issues Detected" panel so a long run does not grow

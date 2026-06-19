@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/models"
 )
 
 // startTestDashboard spins up a dashboard on an ephemeral port and returns it,

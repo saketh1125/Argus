@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/models"
 )
 
 // NumberedChunk renders a code chunk for an LLM prompt with 1-based line

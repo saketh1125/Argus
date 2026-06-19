@@ -26,7 +26,7 @@ const apiBase = "https://api.github.com"
 
 // sampleRepoPath is the deterministic buggy source the mock clones when no real
 // local directory is provided.
-const sampleRepoPath = "/home/saketh/Code-Review/testdata/sample-repo"
+const sampleRepoPath = "testdata/sample-repo"
 
 // githubURLRe extracts owner/repo from a GitHub URL. The repo group is
 // non-greedy and stops before an optional ".git" suffix so both

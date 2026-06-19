@@ -11,10 +11,10 @@ func TestParseURL(t *testing.T) {
 	cases := []struct {
 		url, owner, repo string
 	}{
-		{"https://github.com/saketh/codesentinel", "saketh", "codesentinel"},
-		{"https://github.com/saketh/codesentinel.git", "saketh", "codesentinel"},
+		{"https://github.com/saketh1125/argus", "saketh1125", "argus"},
+		{"https://github.com/saketh1125/argus.git", "saketh1125", "argus"},
 		{"https://github.com/octocat/Hello-World/", "octocat", "Hello-World"},
-		{"git@github.com:saketh/codesentinel.git", "saketh", "codesentinel"},
+		{"git@github.com:saketh1125/argus.git", "saketh1125", "argus"},
 	}
 	for _, c := range cases {
 		owner, repo, err := parseGitHubURL(c.url)

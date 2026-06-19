@@ -45,6 +45,8 @@ type panelView struct {
 
 	Agents []agentLine
 	Logs   []string
+
+	Done bool // true when stage == "Complete"
 }
 
 // snapshot copies the current state into a render-ready view under the read
@@ -79,6 +81,7 @@ func (d *Dashboard) snapshot() panelView {
 		RPMMax:         s.rpmMax,
 		Agents:         agents,
 		Logs:           logs,
+		Done:           s.stage == "Complete",
 	}
 }
 
@@ -134,6 +137,8 @@ const pageTemplate = `{{define "page"}}<!DOCTYPE html>
   .crit { color:#ff7b72; } .high { color:#d29922; }
   .log { max-height:200px; overflow-y:auto; font-size:.78rem; color:#8b949e; }
   .log div { white-space:pre-wrap; }
+  .done-banner { background:#1a3a2a; border:1px solid #3fb950; border-radius:8px;
+                 color:#3fb950; font-weight:600; padding:.75rem 1rem; margin-bottom:1rem; font-size:.95rem; }
 </style>
 </head>
 <body>
@@ -152,11 +157,11 @@ const pageTemplate = `{{define "page"}}<!DOCTYPE html>
 
 // panelTemplate is the live fragment: every panel from design §10. Rendered
 // both inline (initial load) and as each SSE update.
-const panelTemplate = `{{define "panel"}}<div class="grid">
+const panelTemplate = `{{define "panel"}}{{if .Done}}<div class="done-banner">✅ Analysis Complete &mdash; {{.PRsRaised}} PR{{if ne .PRsRaised 1}}s{{end}} raised &middot; {{.IssuesFound}} issues found &middot; {{.ValidatedDone}} validated</div>{{end}}<div class="grid">
   <div class="card">
     <h2>Pipeline</h2>
     <table>
-      <tr><td class="k">Stage</td><td>{{.Stage}}</td></tr>
+      <tr><td class="k">Stage</td><td{{if .Done}} style="color:#3fb950;font-weight:600"{{end}}>{{.Stage}}</td></tr>
       <tr><td class="k">Progress</td><td><div class="bar"><span style="width:{{.StagePct}}%"></span></div> {{.StagePct}}%</td></tr>
       <tr><td class="k">Files Done</td><td>{{.FilesDone}} / {{.FilesTotal}}</td></tr>
       <tr><td class="k">Issues Found</td><td>{{.IssuesFound}} (<span class="crit">{{.CriticalCount}} Critical</span>, <span class="high">{{.HighCount}} High</span>)</td></tr>

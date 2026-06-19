@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/saketh/codesentinel/config"
-	"github.com/saketh/codesentinel/models"
-	"github.com/saketh/codesentinel/tools"
+	"github.com/saketh1125/argus/config"
+	"github.com/saketh1125/argus/models"
+	"github.com/saketh1125/argus/tools"
 )
 
 // PRAgent translates validated fixes into GitHub artifacts. For each validated,
@@ -18,14 +19,17 @@ import (
 // returns a *models.RunReport with the fields it can populate (PRsRaised,
 // SummaryIssue, DemotedIssues, IssuesFound); main fills RepoURL/Duration/Mode.
 type PRAgent struct {
-	gh  tools.GitHubClient
-	cfg *config.Config
-	rep models.Reporter
+	gh    tools.GitHubClient
+	cfg   *config.Config
+	rep   models.Reporter
+	dedup *models.DedupStore // nil = no cross-run deduplication
 }
 
 // NewPRAgent wires the PR agent with its GitHub dependency.
-func NewPRAgent(gh tools.GitHubClient, cfg *config.Config, rep models.Reporter) *PRAgent {
-	return &PRAgent{gh: gh, cfg: cfg, rep: rep}
+// Pass a non-nil DedupStore to skip findings whose PR was already raised in a
+// previous run; pass nil to disable cross-run deduplication.
+func NewPRAgent(gh tools.GitHubClient, cfg *config.Config, rep models.Reporter, dedup *models.DedupStore) *PRAgent {
+	return &PRAgent{gh: gh, cfg: cfg, rep: rep, dedup: dedup}
 }
 
 // Run raises PRs for validated fixes and a single summary issue for the rest,
@@ -57,6 +61,12 @@ func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated [
 
 	// Raise one PR per validated issue.
 	for i, iss := range prCandidates {
+		// Cross-run deduplication: skip if a PR was already raised for this
+		// finding in a previous run.
+		if p.dedup != nil && p.dedup.Has(iss.DedupKey()) {
+			p.rep.Log("pragent: skipping %s (already raised in prior run)", iss.DedupKey())
+			continue
+		}
 		p.rep.SetAgentStatus("PRAgent", "raising PR for "+iss.File)
 		pr, err := p.raisePR(ctx, owner, repo, base, iss)
 		if err != nil {
@@ -65,6 +75,10 @@ func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated [
 			iss.Demoted = true
 			report.DemotedIssues = append(report.DemotedIssues, iss)
 			continue
+		}
+		// Record the dedup key so future runs skip this finding.
+		if p.dedup != nil {
+			p.dedup.Record(iss.DedupKey())
 		}
 		report.PRsRaised = append(report.PRsRaised, pr)
 		p.rep.SetPRsRaised(len(report.PRsRaised))
@@ -92,6 +106,8 @@ func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated [
 }
 
 // raisePR creates the branch, commits the rewritten function, and opens the PR.
+// If the branch already exists (422 from GitHub), a timestamp suffix is appended
+// and the creation is retried once — preventing collision on re-runs.
 func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base string, iss *models.Issue) (models.PRResult, error) {
 	branch := fmt.Sprintf("codesentinel/fix-%s-%s-%d",
 		agtSanitizeForBranch(iss.BugType),
@@ -99,7 +115,15 @@ func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base string, iss *mo
 		iss.LineStart)
 
 	if err := p.gh.CreateBranch(ctx, owner, repo, base, branch); err != nil {
-		return models.PRResult{}, fmt.Errorf("create branch: %w", err)
+		if strings.Contains(err.Error(), "422") || strings.Contains(err.Error(), "already exists") {
+			// Append a Unix-second suffix and retry once.
+			branch = fmt.Sprintf("%s-%d", branch, time.Now().Unix())
+			if retryErr := p.gh.CreateBranch(ctx, owner, repo, base, branch); retryErr != nil {
+				return models.PRResult{}, fmt.Errorf("create branch (retry): %w", retryErr)
+			}
+		} else {
+			return models.PRResult{}, fmt.Errorf("create branch: %w", err)
+		}
 	}
 
 	// PRAgent has no workdir, so it commits the best available content: the

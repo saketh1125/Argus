@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/saketh/codesentinel/models"
+	"github.com/saketh1125/argus/models"
 )
 
 // extLang maps file extensions to language names.

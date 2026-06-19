@@ -15,6 +15,9 @@ coverage.html
 /tmp/
 codesentinel-sbx-*
 
+# cross-run dedup state (per-checkout runtime file)
+.codesentinel-dedup.json
+
 # Claude Code local session data
 .claude/
 

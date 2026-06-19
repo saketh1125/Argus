@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 
-	"github.com/saketh/codesentinel/config"
+	"github.com/saketh1125/argus/config"
 )
 
 // Clients is the bundle of selected adapters that the orchestrator (main) wires
