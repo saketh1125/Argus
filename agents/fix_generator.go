@@ -109,13 +109,13 @@ func (f *FixGenerator) candidate(ctx context.Context, idx *models.RepoIndex, iss
 
 	resp, err := f.llm.Complete(ctx, req)
 	if err != nil || resp == nil {
-		f.rep.Log("fixgen: complete %s@%.1f: %v", iss.File, temp, err)
+		f.rep.Log("fixgen: LLM FAILED for %s@%.1f: %v", iss.File, temp, err)
 		return models.FixCandidate{}, false
 	}
 
 	var res models.FixResult
 	if err := agtParseJSON(resp.Text, &res); err != nil || strings.TrimSpace(res.RewrittenFunction) == "" {
-		f.rep.Log("fixgen: parse %s@%.1f: %v", iss.File, temp, err)
+		f.rep.Log("fixgen: JSON parse FAILED for %s@%.1f: %v\nRaw response (first 200 chars): %.200s", iss.File, temp, err, resp.Text)
 		return models.FixCandidate{}, false
 	}
 

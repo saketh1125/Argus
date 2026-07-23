@@ -86,7 +86,7 @@ func envBool(key string, def bool) bool {
 // Config from environment variables with sensible defaults matching the design
 // document (35 RPM ceiling, top-50 files, etc.).
 func Load() *Config {
-	loadDotEnv(".env")
+	loadDotEnv(findProjectRootEnv())
 
 	return &Config{
 		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
@@ -114,6 +114,36 @@ func Load() *Config {
 		ForceMock:   envBool("FORCE_MOCK", false),
 		NoDashboard: envBool("NO_DASHBOARD", false),
 	}
+}
+
+// findProjectRootEnv searches for .env starting from the current working
+// directory and walking up to the filesystem root, looking for a directory that
+// contains go.mod (the project root marker). Falls back to ".env" if not found.
+func findProjectRootEnv() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ".env"
+	}
+	for {
+		// Check for .env in this directory.
+		candidate := dir + "/.env"
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		// Check for go.mod (project root).
+		if _, err := os.Stat(dir + "/go.mod"); err == nil {
+			// We're at the project root but .env wasn't found here either;
+			// return the path so loadDotEnv can try it (it's optional).
+			return candidate
+		}
+		// Walk up.
+		parent := dir[:strings.LastIndexByte(dir, '/')]
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ".env"
 }
 
 // loadDotEnv parses a simple KEY=VALUE .env file and sets any vars not already

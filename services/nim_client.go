@@ -39,7 +39,7 @@ func newNIMClient(baseURL, apiKey, model string, limiter RateLimiter) *nimClient
 		apiKey:  apiKey,
 		model:   model,
 		limiter: limiter,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{},
 	}
 }
 

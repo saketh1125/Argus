@@ -165,13 +165,13 @@ func (l *Localizer) stage2(ctx context.Context, idx *models.RepoIndex, candidate
 	}
 	resp, err := l.llm.Complete(ctx, req)
 	if err != nil || resp == nil {
-		l.rep.Log("localizer: rerank call failed: %v", err)
+		l.rep.Log("localizer: rerank LLM FAILED: %v", err)
 		return nil, false
 	}
 
 	var rr models.RerankResult
 	if err := agtParseJSON(resp.Text, &rr); err != nil || len(rr.Rankings) == 0 {
-		l.rep.Log("localizer: rerank parse failed: %v", err)
+		l.rep.Log("localizer: rerank JSON parse FAILED: %v\nRaw response (first 200 chars): %.200s", err, resp.Text)
 		return nil, false
 	}
 

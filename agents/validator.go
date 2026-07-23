@@ -171,10 +171,12 @@ func (v *Validator) maybeGenTest(ctx context.Context, lang, relFile, rewrite str
 	}
 	resp, err := v.llm.Complete(ctx, req)
 	if err != nil || resp == nil {
+		v.rep.Log("testgen: LLM FAILED: %v", err)
 		return models.TestGenResult{}, false
 	}
 	var res models.TestGenResult
 	if err := agtParseJSON(resp.Text, &res); err != nil || res.Filename == "" || res.TestCode == "" {
+		v.rep.Log("testgen: JSON parse FAILED: %v", err)
 		return models.TestGenResult{}, false
 	}
 	return res, true

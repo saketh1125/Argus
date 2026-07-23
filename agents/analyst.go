@@ -19,8 +19,10 @@ const (
 	minEvidenceLen       = 10
 	minAnalystConfidence = 0.40
 
-	// analystTimeout bounds each analyst goroutine (design §6).
-	analystTimeout = 30 * time.Second
+	// analystTimeout bounds each analyst goroutine (design §6). Must exceed the
+	// NIM HTTP client timeout (60s) so the context deadline fires first and the
+	// request is cancelled cleanly rather than timing out at the HTTP layer.
+	analystTimeout = 90 * time.Second
 )
 
 // Analyst inspects localized code chunks for bugs. It fans out one goroutine per
@@ -131,13 +133,13 @@ func (a *Analyst) analyze(ctx context.Context, idx *models.RepoIndex, t models.L
 
 	resp, err := a.llm.Complete(ctx, req)
 	if err != nil || resp == nil {
-		a.rep.Log("analyst: complete %s: %v", t.File, err)
+		a.rep.Log("analyst: LLM FAILED for %s:%d: %v", t.File, t.LineStart, err)
 		return nil
 	}
 
 	var res models.AnalystResult
 	if err := agtParseJSON(resp.Text, &res); err != nil {
-		a.rep.Log("analyst: parse %s: %v", t.File, err)
+		a.rep.Log("analyst: JSON parse FAILED for %s:%d: %v\nRaw response (first 200 chars): %.200s", t.File, t.LineStart, err, resp.Text)
 		return nil
 	}
 
