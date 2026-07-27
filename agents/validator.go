@@ -92,6 +92,9 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 		if res != nil && res.Success {
+			// Carry the validated full-file content forward so the PR agent can
+			// commit a single-function edit instead of replacing the whole file.
+			cand.PatchedFile = patched
 			selected := cand
 			iss.Fix.Selected = &selected
 			iss.Validated = true

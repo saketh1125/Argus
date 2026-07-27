@@ -235,13 +235,13 @@ func (e *e2bSandbox) Run(ctx context.Context, spec SandboxSpec) (*SandboxResult,
 			"timeout": timeout,
 		}
 		var procResp struct {
-			ExitCode int    `json:"exitCode"`
+			ExitCode int    `json:"exit_code"`
 			Stdout   string `json:"stdout"`
 			Stderr   string `json:"stderr"`
-			TimedOut bool   `json:"timedOut"`
+			TimedOut bool   `json:"timed_out"`
 		}
 		if err := e.doE2B(ctx, http.MethodPost,
-			e.baseURL+"/sandboxes/"+sandboxID+"/process", processBody, &procResp); err != nil {
+			e.baseURL+"/sandboxes/"+sandboxID+"/commands", processBody, &procResp); err != nil {
 			return nil, fmt.Errorf("e2b: run command %q: %w", cmdline, err)
 		}
 

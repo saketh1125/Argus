@@ -123,6 +123,13 @@ type FixCandidate struct {
 	Confidence        float64 `json:"confidence"`
 	Temperature       float64 `json:"temperature"`
 	Rationale         string  `json:"rationale,omitempty"`
+
+	// PatchedFile holds the FULL file content with this rewrite applied, captured
+	// by the validator at validation time. It is what the PR agent commits so a
+	// PR edits only the target function rather than replacing the whole file.
+	// Empty when the candidate was never validated (e.g. the file could not be
+	// read from disk); callers then fall back to RewrittenFunction.
+	PatchedFile string `json:"patched_file,omitempty"`
 }
 
 // Fix bundles the candidate rewrites for an issue and records which one was

@@ -13,13 +13,14 @@ import (
 	"github.com/saketh1125/argus/tools"
 )
 
-// sigCollection is the Qdrant collection name holding embedded signatures.
-const sigCollection = "signatures"
+// sigCollection is the Qdrant collection name holding embedded signatures
+// (API Contract §5.5).
+const sigCollection = "codesentinel_signatures"
 
 // Preprocessor transforms a raw GitHub repository into a structured, searchable
 // knowledge base: it shallow-clones the repo, parses the top-N recently-modified
 // supported files into a RepoIndex, builds the call graph, and embeds every
-// signature into the "signatures" vector collection. Embedding/vector errors are
+// signature into the "codesentinel_signatures" vector collection. Embedding/vector errors are
 // non-fatal (the localizer has an offline fallback); only a clone failure is
 // fatal.
 type Preprocessor struct {
@@ -130,7 +131,7 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 }
 
 // embedSignatures embeds every signature's "{file} {name} {signature}" text into
-// the "signatures" collection. Any embedding/vector-store error is logged and
+// the "codesentinel_signatures" collection. Any embedding/vector-store error is logged and
 // ignored — localization falls back to direct index scanning when search is
 // empty.
 func (p *Preprocessor) embedSignatures(ctx context.Context, idx *models.RepoIndex) {

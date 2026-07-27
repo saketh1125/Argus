@@ -76,6 +76,12 @@ library only** — no external modules, no CGO, no codegen toolchain:
   of tree-sitter CGO bindings — robust to build, covers the supported languages.
 - **Dashboard** → `html/template` + HTMX (CDN) + Server-Sent Events instead of
   Templ — single binary, no generate step.
+- **Embeddings fallback tier 4** → the design's `all-MiniLM-L6-v2` runs via a
+  Python `sentence-transformers` subprocess, which would break the zero-dependency,
+  single-binary principle. This build substitutes the **deterministic pure-Go hash
+  embedding** (the same offline adapter) as the final tier. The chain is therefore
+  Ollama → Jina → Gemini → hash-embedding; the first three are real adapters, so
+  any one of those keys/services takes the pipeline live on embeddings.
 
 Why: zero dependency churn, an always-green build, and a true single binary. The
 interfaces are unchanged, so the named SDKs can be swapped back in later behind
