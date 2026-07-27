@@ -31,6 +31,12 @@ type nimClient struct {
 	http    *http.Client
 }
 
+// nimHTTPTimeout bounds every HTTP round-trip to the NIM endpoint so a hung
+// connection on a context without a deadline (e.g. the localizer's rerank call)
+// cannot stall the pipeline. Set below the analyst goroutine timeout (90s) so
+// the analyst context rarely fires before the HTTP layer cancels cleanly.
+const nimHTTPTimeout = 60 * time.Second
+
 // newNIMClient builds a live NIM adapter. baseURL is the API root (e.g.
 // "https://integrate.api.nvidia.com/v1"); every call is gated by limiter.
 func newNIMClient(baseURL, apiKey, model string, limiter RateLimiter) *nimClient {
@@ -39,7 +45,7 @@ func newNIMClient(baseURL, apiKey, model string, limiter RateLimiter) *nimClient
 		apiKey:  apiKey,
 		model:   model,
 		limiter: limiter,
-		http:    &http.Client{},
+		http:    &http.Client{Timeout: nimHTTPTimeout},
 	}
 }
 

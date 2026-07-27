@@ -16,6 +16,8 @@ type LaunchConfig struct {
 	GitHubToken    string
 	NIMAPIKey      string
 	E2BAPIKey      string
+	JinaAPIKey     string
+	GeminiAPIKey   string
 	OllamaHost     string
 	QdrantHost     string
 	QdrantPort     int
@@ -65,6 +67,8 @@ func (d *Dashboard) handleStart(w http.ResponseWriter, r *http.Request) {
 		GitHubToken:    r.FormValue("github_token"),
 		NIMAPIKey:      r.FormValue("nim_api_key"),
 		E2BAPIKey:      r.FormValue("e2b_api_key"),
+		JinaAPIKey:     r.FormValue("jina_api_key"),
+		GeminiAPIKey:   r.FormValue("gemini_api_key"),
 		OllamaHost:     strOr(r.FormValue("ollama_host"), "http://localhost:11434"),
 		QdrantHost:     strOr(r.FormValue("qdrant_host"), "localhost"),
 		QdrantPort:     qdrantPort,

@@ -19,13 +19,17 @@ const localizeQuery = "potential bug: security, logic, null, injection, off-by-o
 // the rerank prompt and for any fallback target list.
 const maxLocalizeCandidates = 30
 
+// topRerankTargets is how many suspicious locations Stage 2 keeps after LLM
+// re-ranking (System Design §4.2: "top-3 ranked locations").
+const topRerankTargets = 3
+
 // Localizer narrows the indexed repo down to the most suspicious code locations.
-// Stage 1 runs a vector search over the "signatures" collection; Stage 2 asks the
-// LLM (Task=rerank) to score each candidate by bug likelihood. When the best
-// rerank confidence is below cfg.LocalizeFallback, it emits whole-file targets
-// (FullFile=true). When vector search yields nothing (offline/empty store) it
-// falls back to scanning signatures directly from the index, so the demo always
-// has somewhere to look.
+// Stage 1 runs a vector search over the "codesentinel_signatures" collection;
+// Stage 2 asks the LLM (Task=rerank) to score each candidate by bug likelihood,
+// keeping the top-3 (System Design §4.2). When the best rerank confidence is
+// below cfg.LocalizeFallback it emits whole-file targets (FullFile=true). When
+// vector search yields nothing (offline/empty store) it falls back to scanning
+// signatures directly from the index, so the demo always has somewhere to look.
 type Localizer struct {
 	llm    services.LLMClient
 	embed  services.EmbeddingClient
@@ -175,10 +179,14 @@ func (l *Localizer) stage2(ctx context.Context, idx *models.RepoIndex, candidate
 		return nil, false
 	}
 
-	// Sort rankings by confidence descending and build targets.
+	// Sort rankings by confidence descending and build targets, keeping only the
+	// top-N (System Design §4.2: "top-3 ranked locations").
 	sort.SliceStable(rr.Rankings, func(i, j int) bool {
 		return rr.Rankings[i].Confidence > rr.Rankings[j].Confidence
 	})
+	if len(rr.Rankings) > topRerankTargets {
+		rr.Rankings = rr.Rankings[:topRerankTargets]
+	}
 	var targets []models.LocationTarget
 	for _, item := range rr.Rankings {
 		if item.Index < 0 || item.Index >= len(candidates) {

@@ -161,7 +161,7 @@ func run() error {
 	}
 
 	dedup := models.LoadDedupStore(".codesentinel-dedup.json")
-	pr := agents.NewPRAgent(gh, cfg, rep, dedup)
+	pr := agents.NewPRAgent(gh, cfg, rep, dedup, idx)
 	report, err := pr.Run(ctx, owner, repo, base, validated, summary)
 	if err != nil {
 		return fmt.Errorf("pr creation: %w", err)
@@ -205,6 +205,12 @@ func applyLaunchConfig(cfg *config.Config, lc dashboard.LaunchConfig) {
 	}
 	if lc.E2BAPIKey != "" {
 		cfg.E2BAPIKey = lc.E2BAPIKey
+	}
+	if lc.JinaAPIKey != "" {
+		cfg.JinaAPIKey = lc.JinaAPIKey
+	}
+	if lc.GeminiAPIKey != "" {
+		cfg.GeminiAPIKey = lc.GeminiAPIKey
 	}
 	if lc.OllamaHost != "" {
 		cfg.OllamaHost = lc.OllamaHost

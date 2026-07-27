@@ -445,18 +445,6 @@ class ControlPanel(tk.Tk):
                 env = os.environ.copy()
                 env.update(self._env_data)
                 proc = subprocess.Popen(
-                    [sys.executable, "-m", "go"],  # fallback
-                    cwd=str(PROJECT_DIR), env=env,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    start_new_session=True)
-            except Exception:
-                pass
-
-            # prefer `go run .` directly
-            try:
-                env = os.environ.copy()
-                env.update(self._env_data)
-                proc = subprocess.Popen(
                     ["go", "run", ".", "--repo", repo, "--web"],
                     cwd=str(PROJECT_DIR), env=env,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

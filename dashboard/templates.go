@@ -267,6 +267,16 @@ const launcherTemplate = `{{define "launcher-page"}}<!DOCTYPE html>
         <label>E2B API Key (cloud sandbox) <span class="hint">blank = local syntax check</span></label>
         <input type="password" name="e2b_api_key" placeholder="e2b_...">
       </div>
+      <div class="row" style="margin-top:.75rem">
+        <div>
+          <label>Jina API Key (embeddings fallback)</label>
+          <input type="password" name="jina_api_key" placeholder="jina_...">
+        </div>
+        <div>
+          <label>Gemini API Key (embeddings fallback)</label>
+          <input type="password" name="gemini_api_key" placeholder="AIza...">
+        </div>
+      </div>
 
       <div class="section">Local Services</div>
       <div class="svc-row">
