@@ -496,16 +496,82 @@ const panelTemplate = `{{define "panel"}}
   .kpi .value { font-size: 1.75rem; font-weight: 700; font-family: var(--mono); color: var(--fg); line-height: 1; }
   .kpi .sub { font-size: .7rem; color: var(--fg-dim); display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   
-  /* Lower grid */
-  .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
-  @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
-  .detail-grid .card.full-width { grid-column: 1 / -1; }
+  /* Lower grid: Issues full-width, Agents + Log side by side */
+  .detail-grid { display: grid; grid-template-columns: 1fr; gap: var(--sp-4); }
+  @media (min-width: 900px) {
+    .detail-grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+    }
+    .detail-grid .issues-card { grid-row: 1; }
+    .detail-grid .agents-log { display: grid; grid-template-columns: 1fr 1.6fr; gap: var(--sp-4); grid-row: 2; }
+  }
+  @media (max-width: 900px) { .detail-grid .agents-log { display: grid; grid-template-columns: 1fr; gap: var(--sp-4); } }
   
-  /* Log specific */
-  .log.scroll-y { max-height: 220px; font-size: .75rem; }
+  /* Issues table */
+  .issues-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+  .issues-table th, .issues-table td { padding: var(--sp-2) var(--sp-3); text-align: left; border-bottom: 1px solid var(--bd2); }
+  .issues-table th { color: var(--fg-dim); font-weight: 600; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; background: var(--bg1); }
+  .issues-table tbody tr { transition: background .1s; }
+  .issues-table tbody tr:nth-child(even) { background: rgba(255,255,255,.01); }
+  .issues-table tbody tr:hover { background: rgba(88,166,255,.04); }
+  .issues-table .sev-cell { width: 40px; text-align: center; }
+  .issues-table .sev-cell .icon { font-size: .9rem; }
+  .issues-table .sev-crit { border-left: 3px solid var(--sev-crit); }
+  .issues-table .sev-high { border-left: 3px solid var(--sev-high); }
+  .issues-table .sev-med { border-left: 3px solid var(--sev-med); }
+  .issues-table .sev-low { border-left: 3px solid var(--sev-low); }
+  .issues-table .type { white-space: nowrap; }
+  .issues-table .file { max-width: 280px; }
+  .issues-table .line { width: 60px; text-align: right; }
+  .issues-table .conf { width: 120px; }
+  .issues-table .conf-bar { height: 6px; background: var(--bg3); border-radius: var(--radius-sm); overflow: hidden; }
+  .issues-table .conf-bar > span { display: block; height: 100%; border-radius: var(--radius-sm); transition: width .3s; }
+  .issues-table .conf-bar.ok > span { background: var(--ok); }
+  .issues-table .conf-bar.warn > span { background: var(--warn); }
+  .issues-table .conf-bar.crit > span { background: var(--err); }
+  .issues-table .conf-val { font-size: .65rem; color: var(--fg-dim); margin-top: 2px; }
+  .issues-footer { display: flex; gap: var(--sp-4); margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--bd1); font-size: .7rem; color: var(--fg-dim); flex-wrap: wrap; }
+  .issues-footer .sev-crit, .issues-footer .sev-high { font-weight: 600; }
   
-  /* Issues placeholder */
-  .issues-placeholder { text-align: center; padding: var(--sp-5); color: var(--fg-dim); }
+  /* Agent cards */
+  .agents-container { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 260px; overflow-y: auto; }
+  .agent-card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+    background: var(--bg1);
+    border: 1px solid var(--bd1);
+    border-radius: var(--radius-sm);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .agent-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .agent-card .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px;
+    background: var(--bd1); transition: background .2s, box-shadow .2s;
+  }
+  .agent-card.active .dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(88,166,255,.3);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .agent-card .info { flex: 1; min-width: 0; }
+  .agent-card .name { font-family: var(--mono); font-weight: 600; font-size: .75rem; color: var(--fg); }
+  .agent-card .status { font-size: .7rem; color: var(--fg-dim); word-break: break-word; margin-top: 2px; }
+  
+  /* Log drawer */
+  .log.scroll-y { max-height: 220px; font-size: .72rem; line-height: 1.5; }
+  .log .line { padding: 2px 0; white-space: pre-wrap; word-break: break-word; }
+  .log .line.warn { color: var(--warn); }
+  .log .line.err { color: var(--err); }
+  .log .line.faint { color: var(--fg-faint); }
+  .log .line.info { color: var(--fg-dim); }
+  
+  /* Issues footer */
+  .issues-card .card { overflow: hidden; }
+  .issues-card .issues-table th:first-child, .issues-card .issues-table td:first-child { padding-left: var(--sp-3); }
+  .issues-card .issues-table th:last-child, .issues-card .issues-table td:last-child { padding-right: var(--sp-3); }
 </style>
 
 <div class="panel">
@@ -594,20 +660,69 @@ const panelTemplate = `{{define "panel"}}
 
   <!-- Lower Detail Grid -->
   <div class="detail-grid">
-    <div class="card">
+    <!-- Issues Table (full width) -->
+    <div class="card issues-card">
       <h2>Issues detected</h2>
-      <p class="issues-placeholder muted">awaiting data…</p>
+      <table class="issues-table" aria-live="polite">
+        <thead>
+          <tr>
+            <th class="sev-cell" scope="col">Sev</th>
+            <th class="type" scope="col">Type</th>
+            <th class="file" scope="col">File</th>
+            <th class="line" scope="col">Line</th>
+            <th class="conf" scope="col">Confidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .RecentIssues}}
+          {{ $sev := "low" }}{{if eq .Icon "🔴"}}{{ $sev = "crit" }}{{else if eq .Icon "🟠"}}{{ $sev = "high" }}{{else if eq .Icon "🟡"}}{{ $sev = "med" }}{{end}}
+          <tr class="{{ $sev }}">
+            <td class="sev-cell"><span class="icon">{{.Icon}}</span></td>
+            <td class="type mono"><span class="badge">{{.BugType}}</span></td>
+            <td class="file mono ellipsis" title="{{.File}}">{{.File}}</td>
+            <td class="line num">{{.Line}}</td>
+            <td class="conf">
+              {{ $confClass := "ok" }}{{if lt .Confidence 40}}{{ $confClass = "crit" }}{{else if lt .Confidence 60}}{{ $confClass = "warn" }}{{end}}
+              <div class="conf-bar {{ $confClass }}"><span style="width:{{.Confidence}}%"></span></div>
+              <div class="conf-val num">{{.Confidence}}%</div>
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="5" class="muted" style="text-align:center;padding:var(--sp-5)">No issues detected yet</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+      <div class="issues-footer">
+        <span>{{.IssuesFound}} total</span>
+        <span class="sev-crit">{{.CriticalCount}} critical</span>
+        <span class="sev-high">{{.HighCount}} high</span>
+      </div>
     </div>
-    <div class="card">
-      <h2>Active agents</h2>
-      <ul>
-        {{range .Agents}}<li class="mono">{{.Name}}: <span class="muted">{{.Status}}</span></li>{{else}}<li class="muted">No active agents</li>{{end}}
-      </ul>
-    </div>
-    <div class="card full-width">
-      <h2>Log</h2>
-      <div class="log scroll-y">
-        {{range .Logs}}<div class="mono">{{.}}</div>{{else}}<div class="muted">—</div>{{end}}
+
+    <!-- Agents + Log side by side -->
+    <div class="agents-log">
+      <div class="card">
+        <h2>Active agents</h2>
+        <div class="agents-container scroll-y">
+          {{range .Agents}}
+          {{ $active := (ne .Status "") }}
+          <div class="agent-card {{if $active}}active{{end}}">
+            <span class="dot"></span>
+            <div class="info">
+              <div class="name mono">{{.Name}}</div>
+              <div class="status">{{if .Status}}{{.Status}}{{else}}idle{{end}}</div>
+            </div>
+          </div>
+          {{else}}
+          <div class="muted" style="padding:var(--sp-3);text-align:center">No active agents</div>
+          {{end}}
+        </div>
+      </div>
+      <div class="card">
+        <h2>Log</h2>
+        <div class="log scroll-y" aria-live="polite" id="log-drawer">
+          {{range .Logs}}<div class="line">{{.}}</div>{{else}}<div class="line muted">—</div>{{end}}
+        </div>
       </div>
     </div>
   </div>
@@ -627,6 +742,26 @@ const panelTemplate = `{{define "panel"}}
         else if (pct > 80) el.classList.add('warn');
       }
     });
+
+    // Log line classification + autoscroll
+    var log = document.getElementById('log-drawer');
+    if (log) {
+      log.querySelectorAll('.line').forEach(function(line) {
+        var txt = line.textContent.toLowerCase();
+        line.classList.remove('warn', 'err', 'faint', 'info');
+        if (txt.indexOf('error') >= 0 || txt.indexOf('fail') >= 0 || txt.indexOf('panic') >= 0 || txt.indexOf('demote') >= 0) {
+          line.classList.add('err');
+        } else if (txt.indexOf('warn') >= 0 || txt.indexOf('skip') >= 0) {
+          line.classList.add('warn');
+        } else if (txt.indexOf('pragent:') >= 0 || txt.indexOf('skipping') >= 0) {
+          line.classList.add('faint');
+        } else {
+          line.classList.add('info');
+        }
+      });
+      // Autoscroll to bottom
+      log.scrollTop = log.scrollHeight;
+    }
   })();
 </script>{{end}}`
 
