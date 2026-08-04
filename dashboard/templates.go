@@ -401,38 +401,234 @@ const pageTemplate = `{{define "page"}}<!DOCTYPE html>
 
 // panelTemplate is the live fragment: every panel from design §10. Rendered
 // both inline (initial load) and as each SSE update.
-const panelTemplate = `{{define "panel"}}{{if .Done}}<div class="done-banner">✅ Analysis Complete &mdash; {{.PRsRaised}} PR{{if ne .PRsRaised 1}}s{{end}} raised &middot; {{.IssuesFound}} issues found &middot; {{.ValidatedDone}} validated</div>{{end}}<div class="grid">
-  <div class="card">
-    <h2>Pipeline</h2>
-    <table>
-      <tr><td class="k">Stage</td><td{{if .Done}} style="color:#3fb950;font-weight:600"{{end}}>{{.Stage}}</td></tr>
-      <tr><td class="k">Progress</td><td><div class="bar"><span style="width:{{.StagePct}}%"></span></div> {{.StagePct}}%</td></tr>
-      <tr><td class="k">Files Done</td><td>{{.FilesDone}} / {{.FilesTotal}}</td></tr>
-      <tr><td class="k">Issues Found</td><td>{{.IssuesFound}} (<span class="crit">{{.CriticalCount}} Critical</span>, <span class="high">{{.HighCount}} High</span>)</td></tr>
-      <tr><td class="k">PRs Raised</td><td>{{.PRsRaised}}</td></tr>
-      <tr><td class="k">Validated</td><td>{{.ValidatedDone}} / {{.ValidatedTotal}}</td></tr>
-      <tr><td class="k">RPM Usage</td><td>{{.RPMCurrent}} / {{.RPMMax}}</td></tr>
-    </table>
+const panelTemplate = `{{define "panel"}}
+<style>
+  /* Panel-specific styles (idempotent on SSE re-render) */
+  .panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+  
+  /* Stage rail */
+  .rail {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--bg1);
+    border: 1px solid var(--bd1);
+    border-radius: var(--radius);
+    overflow-x: auto;
+  }
+  .rail li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    padding: var(--sp-2) var(--sp-1);
+  }
+  .rail li:not(:first-child)::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: -50%;
+    width: 100%;
+    height: 2px;
+    background: var(--bd1);
+    z-index: 0;
+  }
+  .rail li.completed::before { background: var(--ok); }
+  .rail .node {
+    position: relative;
+    z-index: 1;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--bd1);
+    border: 2px solid var(--bg0);
+    transition: background .2s, box-shadow .2s, transform .2s;
+  }
+  .rail li.completed .node { background: var(--ok); }
+  .rail li.active .node {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(88,166,255,.3);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .rail li.done .node { background: var(--ok); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(88,166,255,.3); }
+    50% { box-shadow: 0 0 0 6px rgba(88,166,255,.15); }
+  }
+  .rail .lbl {
+    margin-top: var(--sp-1);
+    font-size: .6rem;
+    font-family: var(--mono);
+    color: var(--fg-dim);
+    text-align: center;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rail li.active .lbl { color: var(--accent); font-weight: 600; }
+  .rail li.completed .lbl { color: var(--ok); }
+  
+  /* Overall progress bar under rail */
+  .rail-progress { margin-top: var(--sp-3); }
+  .rail-progress .bar { height: 6px; }
+  
+  /* KPI tiles */
+  .kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-3); }
+  @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 400px) { .kpi-row { grid-template-columns: 1fr; } }
+  
+  .kpi {
+    background: var(--bg2);
+    border: 1px solid var(--bd1);
+    border-radius: var(--radius);
+    padding: var(--sp-4);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-1);
+  }
+  .kpi .icon { width: 18px; height: 18px; stroke: var(--fg-dim); flex-shrink: 0; }
+  .kpi .value { font-size: 1.75rem; font-weight: 700; font-family: var(--mono); color: var(--fg); line-height: 1; }
+  .kpi .sub { font-size: .7rem; color: var(--fg-dim); display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  
+  /* Lower grid */
+  .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
+  @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
+  .detail-grid .card.full-width { grid-column: 1 / -1; }
+  
+  /* Log specific */
+  .log.scroll-y { max-height: 220px; font-size: .75rem; }
+  
+  /* Issues placeholder */
+  .issues-placeholder { text-align: center; padding: var(--sp-5); color: var(--fg-dim); }
+</style>
+
+<div class="panel">
+  {{if .Done}}
+  <div class="done-banner">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:var(--sp-2);">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    Analysis complete — {{.PRsRaised}} PR{{if ne .PRsRaised 1}}s{{end}} raised · {{.IssuesFound}} issues found · {{.ValidatedDone}} validated
   </div>
-  <div class="card">
-    <h2>Active Agents</h2>
-    <ul>
-      {{range .Agents}}<li>{{.Name}}: {{.Status}}</li>{{else}}<li>No active agents</li>{{end}}
-    </ul>
+  {{end}}
+
+  <!-- Stage Timeline Rail -->
+  <ol class="rail">
+    <li{{if eq .Stage "Preprocessing"}} class="active"{{else if or (eq .Stage "Localizing") (eq .Stage "Analyzing") (eq .Stage "Aggregating") (eq .Stage "Generating Fixes") (eq .Stage "Validating") (eq .Stage "Raising PRs") (eq .Stage "Complete")}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Preprocessing</span>
+    </li>
+    <li{{if eq .Stage "Localizing"}} class="active"{{else if or (eq .Stage "Analyzing") (eq .Stage "Aggregating") (eq .Stage "Generating Fixes") (eq .Stage "Validating") (eq .Stage "Raising PRs") (eq .Stage "Complete")}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Localizing</span>
+    </li>
+    <li{{if eq .Stage "Analyzing"}} class="active"{{else if or (eq .Stage "Aggregating") (eq .Stage "Generating Fixes") (eq .Stage "Validating") (eq .Stage "Raising PRs") (eq .Stage "Complete")}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Analyzing</span>
+    </li>
+    <li{{if eq .Stage "Aggregating"}} class="active"{{else if or (eq .Stage "Generating Fixes") (eq .Stage "Validating") (eq .Stage "Raising PRs") (eq .Stage "Complete")}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Aggregating</span>
+    </li>
+    <li{{if eq .Stage "Generating Fixes"}} class="active"{{else if or (eq .Stage "Validating") (eq .Stage "Raising PRs") (eq .Stage "Complete")}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Generating Fixes</span>
+    </li>
+    <li{{if eq .Stage "Validating"}} class="active"{{else if or (eq .Stage "Raising PRs") (eq .Stage "Complete")}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Validating</span>
+    </li>
+    <li{{if eq .Stage "Raising PRs"}} class="active"{{else if eq .Stage "Complete"}} class="completed"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Raising PRs</span>
+    </li>
+    <li{{if eq .Stage "Complete"}} class="done"{{end}}>
+      <span class="node"></span>
+      <span class="lbl">Complete</span>
+    </li>
+  </ol>
+  <div class="rail-progress">
+    <div class="bar{{if and (gt .StagePct 0) (lt .StagePct 100) (ne .Done true)}} warn{{end}}"><span style="width:{{.StagePct}}%"></span></div>
+    <span class="num muted" style="margin-left:var(--sp-2)">{{.StagePct}}%</span>
   </div>
-  <div class="card">
-    <h2>Issues Detected</h2>
-    <ul>
-      {{range .RecentIssues}}<li>{{.Icon}} {{.BugType}} — {{.File}}:{{.Line}} (conf: {{.Confidence}}%)</li>{{else}}<li>None yet</li>{{end}}
-    </ul>
-  </div>
-  <div class="card">
-    <h2>Log</h2>
-    <div class="log">
-      {{range .Logs}}<div>{{.}}</div>{{else}}<div>—</div>{{end}}
+
+  <!-- KPI Tiles -->
+  <div class="kpi-row">
+    <div class="kpi">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="value">{{.IssuesFound}}</div>
+      <div class="sub"><span class="sev-crit">{{.CriticalCount}} crit</span> · <span class="sev-high">{{.HighCount}} high</span></div>
+    </div>
+    <div class="kpi">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"/><path d="M12 6V12L15 15"/></svg>
+      <div class="value">{{.PRsRaised}}</div>
+      <div class="sub muted">pull requests</div>
+    </div>
+    <div class="kpi">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9S3 16.97 3 12 7.03 3 12 3"/></svg>
+      <div class="value">{{.ValidatedDone}}/{{.ValidatedTotal}}</div>
+      <div class="sub muted">fixes sandbox-checked</div>
+    </div>
+    <div class="kpi">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <div class="value">{{.FilesDone}}/{{.FilesTotal}}</div>
+      <div class="sub muted">indexed</div>
+    </div>
+    <div class="kpi">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <div class="value">{{.RPMCurrent}}/{{.RPMMax}}</div>
+      <div class="bar" style="width:100%;margin-top:var(--sp-1);height:4px" data-cur="{{.RPMCurrent}}" data-max="{{.RPMMax}}"><span></span></div>
+    </div>
+    <div class="kpi">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+      <div class="value">{{.Stage}}</div>
+      <div class="sub muted">{{.StagePct}}%</div>
     </div>
   </div>
-</div>{{end}}`
+
+  <!-- Lower Detail Grid -->
+  <div class="detail-grid">
+    <div class="card">
+      <h2>Issues detected</h2>
+      <p class="issues-placeholder muted">awaiting data…</p>
+    </div>
+    <div class="card">
+      <h2>Active agents</h2>
+      <ul>
+        {{range .Agents}}<li class="mono">{{.Name}}: <span class="muted">{{.Status}}</span></li>{{else}}<li class="muted">No active agents</li>{{end}}
+      </ul>
+    </div>
+    <div class="card full-width">
+      <h2>Log</h2>
+      <div class="log scroll-y">
+        {{range .Logs}}<div class="mono">{{.}}</div>{{else}}<div class="muted">—</div>{{end}}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // RPM bar width + color from data attributes
+    document.querySelectorAll('.kpi .bar[data-cur]').forEach(function(el) {
+      var cur = parseInt(el.getAttribute('data-cur'), 10);
+      var max = parseInt(el.getAttribute('data-max'), 10);
+      if (max > 0) {
+        var pct = Math.min(100, Math.round((cur / max) * 100));
+        el.querySelector('span').style.width = pct + '%';
+        el.classList.remove('warn', 'crit');
+        if (pct > 95) el.classList.add('crit');
+        else if (pct > 80) el.classList.add('warn');
+      }
+    });
+  })();
+</script>{{end}}`
 
 // launcherTemplate is the pre-run configuration form served at / when
 // --web mode is active. Submitting it POSTs to /start.
