@@ -108,49 +108,293 @@ func (d *Dashboard) renderPage(w io.Writer, panel []byte) error {
 }
 
 // pageTemplate is the outer document: head, styles, the #app container seeded
-// with the initial panel, the HTMX CDN script, and the EventSource wiring.
+// with the initial panel, and the EventSource wiring.
 const pageTemplate = `{{define "page"}}<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-         background:#0d1117; color:#e6edf3; margin:0; padding:1.5rem; }
-  h1 { font-size:1.25rem; margin:0 0 1rem; color:#58a6ff; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-          gap:1rem; }
-  .card { background:#161b22; border:1px solid #30363d; border-radius:8px;
-          padding:1rem; }
-  .card h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
-             color:#8b949e; margin:0 0 .6rem; }
-  table { width:100%; border-collapse:collapse; font-size:.9rem; }
-  td { padding:.2rem 0; }
-  td.k { color:#8b949e; width:45%; }
-  .bar { background:#21262d; border-radius:4px; height:14px; overflow:hidden; }
-  .bar > span { display:block; height:100%; background:#3fb950; }
-  ul { list-style:none; margin:0; padding:0; font-size:.85rem; }
-  li { padding:.15rem 0; border-bottom:1px solid #21262d; }
-  .crit { color:#ff7b72; } .high { color:#d29922; }
-  .log { max-height:200px; overflow-y:auto; font-size:.78rem; color:#8b949e; }
-  .log div { white-space:pre-wrap; }
-  .done-banner { background:#1a3a2a; border:1px solid #3fb950; border-radius:8px;
-                 color:#3fb950; font-weight:600; padding:.75rem 1rem; margin-bottom:1rem; font-size:.95rem; }
+  /* ========================================================================
+   * Design Tokens
+   * ======================================================================== */
+  :root {
+    color-scheme: dark;
+
+    /* Surface scale */
+    --bg0: #0a0e14;   /* page background */
+    --bg1: #0d1117;   /* panel surface */
+    --bg2: #161b22;   /* card */
+    --bg3: #21262d;   /* inset/control */
+    --bd1: #30363d;   /* border */
+    --bd2: #21262d;   /* subtle divider */
+
+    /* Text scale */
+    --fg: #e6edf3;
+    --fg-dim: #8b949e;
+    --fg-faint: #6e7681;
+
+    /* Accent */
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+
+    /* Severity */
+    --sev-crit: #ff7b72;
+    --sev-high: #d29922;
+    --sev-med: #e3b341;
+    --sev-low: #8b949e;
+
+    /* Status */
+    --ok: #3fb950;
+    --ok-bg: #1a3a2a;
+    --warn: #d29922;
+    --err: #ff7b72;
+    --err-bg: #3a1a1a;
+
+    /* Radius & spacing */
+    --radius: 10px;
+    --radius-sm: 6px;
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+
+    /* Font stacks */
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+
+  /* ========================================================================
+   * Base Layout
+   * ======================================================================== */
+  * { box-sizing: border-box; }
+  body {
+    font-family: var(--sans);
+    background:
+      radial-gradient(1200px 400px at 50% -200px, rgba(88,166,255,.10), transparent 70%),
+      var(--bg0);
+    color: var(--fg);
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* App bar */
+  .appbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 var(--sp-5);
+    background: rgba(10,14,20,.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--bd1);
+  }
+  .appbar__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .appbar__icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    stroke: var(--accent);
+  }
+  .appbar__title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+  .appbar__subtitle {
+    font-size: .75rem;
+    color: var(--fg-dim);
+    font-weight: 400;
+  }
+  #conn-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    font-size: .7rem;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: 999px;
+    background: var(--bg3);
+    color: var(--fg-dim);
+  }
+  #conn-state.c-ok { color: var(--ok); background: var(--ok-bg); }
+  #conn-state.c-warn { color: var(--warn); background: var(--warn); opacity: .15; }
+  #conn-state.c-err { color: var(--err); background: var(--err-bg); }
+
+  /* Main content wrapper */
+  .wrap {
+    flex: 1;
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: var(--sp-5) var(--sp-4);
+  }
+
+  /* ========================================================================
+   * Utility Classes (shared by panel & launcher)
+   * ======================================================================== */
+
+  /* Card */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--bd1);
+    border-radius: var(--radius);
+    padding: var(--sp-4);
+    box-shadow: 0 1px 0 rgba(255,255,255,.02) inset;
+  }
+  .card > h2 {
+    position: relative;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--fg-dim);
+    margin: 0 0 var(--sp-3);
+    padding-left: var(--sp-3);
+  }
+  .card > h2::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 10px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+
+  /* Grid helpers */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--sp-4);
+  }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-4); }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); }
+  @media (max-width: 900px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  }
+
+  /* Progress bar */
+  .bar {
+    background: var(--bg3);
+    border-radius: var(--radius-sm);
+    height: 8px;
+    overflow: hidden;
+  }
+  .bar > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--ok), var(--accent));
+    transition: width .3s ease;
+    border-radius: var(--radius-sm);
+  }
+  .bar.warn > span { background: var(--warn); }
+  .bar.crit > span { background: var(--err); }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: .7rem;
+    font-family: var(--mono);
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: 999px;
+    background: var(--bg3);
+    color: var(--fg-dim);
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.err { background: var(--err-bg); color: var(--err); }
+  .badge.warn { background: rgba(210,153,34,.15); color: var(--warn); }
+
+  /* Text utilities */
+  .muted { color: var(--fg-dim); }
+  .mono { font-family: var(--mono); }
+  .num { font-variant-numeric: tabular-nums; }
+  .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Severity text colors */
+  .sev-crit { color: var(--sev-crit); }
+  .sev-high { color: var(--sev-high); }
+  .sev-med { color: var(--sev-med); }
+  .sev-low { color: var(--sev-low); }
+
+  /* Scrollbar */
+  .scroll-y {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bd2) var(--bd1);
+  }
+  .scroll-y::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-y::-webkit-scrollbar-track { background: var(--bd1); border-radius: 4px; }
+  .scroll-y::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 4px; }
+  .scroll-y::-webkit-scrollbar-thumb:hover { background: var(--bd1); }
+
+  /* Done banner */
+  .done-banner {
+    background: var(--ok-bg);
+    border: 1px solid var(--ok);
+    border-radius: var(--radius);
+    color: var(--ok);
+    font-weight: 600;
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-4);
+    font-size: .95rem;
+  }
 </style>
 </head>
 <body>
-<h1>{{.Title}}</h1>
-<div id="app">{{.Panel}}</div>
+<header class="appbar">
+  <div class="appbar__brand">
+    <svg class="appbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"/>
+      <path d="M12 6V12L15 15"/>
+    </svg>
+    <div>
+      <div class="appbar__title">CodeSentinel</div>
+      <div class="appbar__subtitle">Live Pipeline</div>
+    </div>
+  </div>
+  <span id="conn-state" class="c-warn">○ connecting</span>
+</header>
+<div class="wrap">
+  <div id="app">{{.Panel}}</div>
+</div>
 <script>
-  // Vanilla EventSource: connect to /events and replace #app with each
-  // server-rendered fragment. No page reload (FR-09).
-  const es = new EventSource("/events");
-  es.onmessage = function(e) {
-    document.getElementById("app").innerHTML = e.data;
-  };
+  (function() {
+    const es = new EventSource("/events");
+    const conn = document.getElementById("conn-state");
+
+    function setState(cls, text) {
+      conn.className = cls;
+      conn.textContent = text;
+    }
+
+    es.onopen = function() {
+      setState("c-ok", "● live");
+    };
+    es.onerror = function() {
+      setState("c-warn", "○ reconnecting");
+    };
+    es.onmessage = function(e) {
+      document.getElementById("app").innerHTML = e.data;
+    };
+  })();
 </script>
 </body>
 </html>{{end}}`
@@ -199,73 +443,391 @@ const launcherTemplate = `{{define "launcher-page"}}<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CodeSentinel — Launch</title>
 <style>
-  :root { color-scheme: dark; }
+  /* ========================================================================
+   * Design Tokens (mirrored from pageTemplate for standalone document)
+   * ======================================================================== */
+  :root {
+    color-scheme: dark;
+
+    /* Surface scale */
+    --bg0: #0a0e14;   /* page background */
+    --bg1: #0d1117;   /* panel surface */
+    --bg2: #161b22;   /* card */
+    --bg3: #21262d;   /* inset/control */
+    --bd1: #30363d;   /* border */
+    --bd2: #21262d;   /* subtle divider */
+
+    /* Text scale */
+    --fg: #e6edf3;
+    --fg-dim: #8b949e;
+    --fg-faint: #6e7681;
+
+    /* Accent */
+    --accent: #58a6ff;
+    --accent-2: #1f6feb;
+
+    /* Severity */
+    --sev-crit: #ff7b72;
+    --sev-high: #d29922;
+    --sev-med: #e3b341;
+    --sev-low: #8b949e;
+
+    /* Status */
+    --ok: #3fb950;
+    --ok-bg: #1a3a2a;
+    --warn: #d29922;
+    --err: #ff7b72;
+    --err-bg: #3a1a1a;
+
+    /* Radius & spacing */
+    --radius: 10px;
+    --radius-sm: 6px;
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+
+    /* Font stacks */
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+
+  /* ========================================================================
+   * Base Layout
+   * ======================================================================== */
   * { box-sizing: border-box; }
-  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-         background: #0d1117; color: #e6edf3; margin: 0;
-         display: flex; justify-content: center; padding: 2rem 1rem; }
-  .wrap { width: 100%; max-width: 560px; }
-  h1 { font-size: 1.25rem; color: #58a6ff; margin: 0 0 .25rem; }
-  .sub { color: #8b949e; font-size: .85rem; margin: 0 0 1.75rem; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-          padding: 1.5rem; margin-bottom: 1rem; }
-  .section { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
-             color: #8b949e; margin: 1.25rem 0 .6rem; border-bottom: 1px solid #21262d;
-             padding-bottom: .3rem; }
+  body {
+    font-family: var(--sans);
+    background:
+      radial-gradient(1200px 400px at 50% -200px, rgba(88,166,255,.10), transparent 70%),
+      var(--bg0);
+    color: var(--fg);
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* App bar */
+  .appbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 var(--sp-5);
+    background: rgba(10,14,20,.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--bd1);
+  }
+  .appbar__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .appbar__icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    stroke: var(--accent);
+  }
+  .appbar__title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+  .appbar__subtitle {
+    font-size: .75rem;
+    color: var(--fg-dim);
+    font-weight: 400;
+  }
+
+  /* Main content wrapper for launcher */
+  .wrap {
+    flex: 1;
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--sp-5) var(--sp-4);
+  }
+
+  /* Hero line */
+  .hero {
+    color: var(--fg-dim);
+    font-size: .95rem;
+    margin: var(--sp-4) 0 var(--sp-5);
+    text-align: center;
+  }
+
+  /* ========================================================================
+   * Form Components
+   * ======================================================================== */
+
+  /* Card */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--bd1);
+    border-radius: var(--radius);
+    padding: var(--sp-5);
+  }
+  .card > h2 {
+    position: relative;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--fg-dim);
+    margin: 0 0 var(--sp-3);
+    padding-left: var(--sp-3);
+  }
+  .card > h2::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 10px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  .section {
+    margin-top: var(--sp-5);
+  }
   .section:first-child { margin-top: 0; }
-  label { display: block; font-size: .8rem; color: #8b949e; margin-bottom: .25rem; }
+
+  /* Grid helpers */
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-4); }
+  .grid-3 { display: grid; grid-template-columns: 2fr 1fr 100px; gap: var(--sp-3); align-items: end; }
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  /* Field */
+  .field { margin-bottom: var(--sp-4); }
+  .field:last-child { margin-bottom: 0; }
+  label {
+    display: block;
+    font-size: .8rem;
+    color: var(--fg-dim);
+    margin-bottom: var(--sp-1);
+  }
+  .hint {
+    font-size: .7rem;
+    color: var(--fg-faint);
+    font-weight: 400;
+    margin-left: var(--sp-1);
+  }
+  .input-wrap { position: relative; }
   input[type=text], input[type=password], input[type=number] {
-    width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
-    color: #e6edf3; font-family: inherit; font-size: .9rem;
-    padding: .45rem .7rem; outline: none; }
-  input:focus { border-color: #58a6ff; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
-  .row3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .75rem; }
-  .svc-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
-  .svc-label { width: 60px; font-size: .85rem; }
-  .badge { font-size: .75rem; padding: .15rem .5rem; border-radius: 10px;
-           background: #21262d; color: #8b949e; }
-  .badge.ok  { background: #1a3a2a; color: #3fb950; }
-  .badge.err { background: #3a1a1a; color: #ff7b72; }
-  .checkbox-row { display: flex; align-items: center; gap: .5rem;
-                  font-size: .85rem; margin-top: .5rem; }
-  input[type=checkbox] { width: 15px; height: 15px; accent-color: #58a6ff; }
-  .hint { color: #8b949e; font-size: .75rem; font-weight: normal; margin-left: .4rem; }
+    width: 100%;
+    background: var(--bg1);
+    border: 1px solid var(--bd1);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: .9rem;
+    padding: .55rem .85rem;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type=text]:focus, input[type=password]:focus, input[type=number]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(88,166,255,.18);
+  }
+  .input-wrap.with-icon input { padding-left: 2.5rem; }
+  .input-icon {
+    position: absolute;
+    left: .75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    stroke: var(--fg-dim);
+    pointer-events: none;
+  }
+  .toggle-pw {
+    position: absolute;
+    right: .6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--fg-dim);
+    font-size: .85rem;
+    cursor: pointer;
+    padding: .15rem;
+    line-height: 1;
+    opacity: .7;
+    transition: opacity .15s;
+  }
+  .toggle-pw:hover { opacity: 1; color: var(--fg); }
+
+  /* Service row */
+  .svc-row { display: flex; align-items: end; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+  .svc-label {
+    width: 70px;
+    font-size: .85rem;
+    color: var(--fg-dim);
+    flex-shrink: 0;
+  }
+  .svc-row .input-wrap { flex: 1; }
+  .svc-row input[type=number] { width: 100px; }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: .7rem;
+    font-family: var(--mono);
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: 999px;
+    background: var(--bg3);
+    color: var(--fg-dim);
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.err { background: var(--err-bg); color: var(--err); }
+
+  /* Switch (checkbox styled as toggle) */
+  .switch-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+  }
+  .switch {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--bg3);
+    border: 1px solid var(--bd1);
+    border-radius: 999px;
+    transition: background .2s, border-color .2s;
+    cursor: pointer;
+  }
+  .switch-slider::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: var(--fg-dim);
+    border-radius: 50%;
+    transition: transform .2s, background .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  .switch input:checked + .switch-slider {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .switch input:checked + .switch-slider::before {
+    transform: translateX(22px);
+    background: var(--bg0);
+  }
+  .switch input:focus-visible + .switch-slider {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .switch-label {
+    font-size: .85rem;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .switch-hint { font-size: .7rem; color: var(--fg-faint); margin-left: var(--sp-1); }
+
+  /* Submit button */
   .submit-btn {
-    display: block; width: 100%; padding: .75rem;
-    background: #238636; border: 1px solid #2ea043; border-radius: 6px;
-    color: #fff; font-family: inherit; font-size: 1rem; font-weight: 600;
-    cursor: pointer; margin-top: 1.5rem; transition: background .15s; }
-  .submit-btn:hover { background: #2ea043; }
-  .submit-btn:active { background: #1e7a2e; }
+    display: block;
+    width: 100%;
+    padding: .85rem;
+    background: var(--ok);
+    border: 1px solid var(--ok);
+    border-radius: var(--radius-sm);
+    color: var(--bg0);
+    font-family: var(--sans);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: var(--sp-5);
+    transition: background .15s, border-color .15s, transform .05s;
+  }
+  .submit-btn:hover { background: #4ec460; border-color: #4ec460; }
+  .submit-btn:active { transform: scale(.99); }
+  .submit-hint {
+    text-align: center;
+    margin-top: var(--sp-3);
+    font-size: .75rem;
+    color: var(--fg-faint);
+  }
+
+  /* Focus visible for accessibility */
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
+<header class="appbar">
+  <div class="appbar__brand">
+    <svg class="appbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"/>
+      <path d="M12 6V12L15 15"/>
+    </svg>
+    <div>
+      <div class="appbar__title">CodeSentinel</div>
+      <div class="appbar__subtitle">Launch configuration</div>
+    </div>
+  </div>
+</header>
 <div class="wrap">
-  <h1>🛡 CodeSentinel</h1>
-  <p class="sub">Configure services and credentials, then click Start Analysis.</p>
+  <p class="hero">Configure services, then start an autonomous analysis run.</p>
 
   <div class="card">
     <form method="POST" action="/start">
 
-      <div class="section">Target Repository</div>
-      <label>Repo URL or local path</label>
-      <input type="text" name="repo_url" placeholder="https://github.com/owner/repo  or  ./testdata/sample-repo" required>
-
-      <div class="section">API Keys <span class="hint">blank = deterministic mock mode</span></div>
-      <div class="row">
-        <div>
-          <label>GitHub Token</label>
-          <input type="password" name="github_token" placeholder="ghp_...">
-        </div>
-        <div>
-          <label>NIM API Key (LLM)</label>
-          <input type="password" name="nim_api_key" placeholder="nvapi-...">
+      <h2>Target Repository</h2>
+      <div class="field">
+        <label>Repo URL or local path</label>
+        <div class="input-wrap with-icon">
+          <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <input type="text" name="repo_url" placeholder="https://github.com/owner/repo  ·  or  ./testdata/sample-repo" required autocomplete="url">
         </div>
       </div>
-      <div style="margin-top:.75rem">
+
+      <h2>API Keys</h2>
+      <div class="grid-2">
+        <div class="field">
+          <label>GitHub Token <span class="hint">(PR creation)</span></label>
+          <div class="input-wrap">
+            <input type="password" name="github_token" id="github_token" placeholder="ghp_..." autocomplete="current-password">
+            <button type="button" class="toggle-pw" data-target="github_token" aria-label="Show GitHub token">👁</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>NIM API Key (LLM) <span class="hint">(Nvidia NIM)</span></label>
+          <div class="input-wrap">
+            <input type="password" name="nim_api_key" id="nim_api_key" placeholder="nvapi_..." autocomplete="current-password">
+            <button type="button" class="toggle-pw" data-target="nim_api_key" aria-label="Show NIM API key">👁</button>
+          </div>
+        </div>
+      </div>
+      <div class="field">
         <label>E2B API Key (cloud sandbox) <span class="hint">blank = local syntax check</span></label>
-        <input type="password" name="e2b_api_key" placeholder="e2b_...">
+        <div class="input-wrap">
+          <input type="password" name="e2b_api_key" id="e2b_api_key" placeholder="e2b_..." autocomplete="current-password">
+          <button type="button" class="toggle-pw" data-target="e2b_api_key" aria-label="Show E2B API key">👁</button>
+        </div>
       </div>
       <div class="row" style="margin-top:.75rem">
         <div>
@@ -278,58 +840,95 @@ const launcherTemplate = `{{define "launcher-page"}}<!DOCTYPE html>
         </div>
       </div>
 
-      <div class="section">Local Services</div>
+      <h2>Local Services</h2>
       <div class="svc-row">
         <span class="svc-label">Qdrant</span>
         <span id="qdrant-badge" class="badge">checking…</span>
-        <input type="text" name="qdrant_host" value="localhost" style="flex:1">
-        <input type="number" name="qdrant_port" value="6334" style="width:80px">
+        <div class="input-wrap" style="flex:1">
+          <input type="text" name="qdrant_host" value="localhost" autocomplete="off">
+        </div>
+        <div class="input-wrap" style="width:100px">
+          <input type="number" name="qdrant_port" value="6334" min="1" max="65535" autocomplete="off">
+        </div>
       </div>
       <div class="svc-row">
         <span class="svc-label">Ollama</span>
         <span id="ollama-badge" class="badge">checking…</span>
-        <input type="text" name="ollama_host" value="http://localhost:11434" style="flex:1">
+        <div class="input-wrap" style="flex:1">
+          <input type="text" name="ollama_host" value="http://localhost:11434" autocomplete="off">
+        </div>
       </div>
-      <div style="margin-top:.75rem">
+      <div class="field">
         <label>Embed model</label>
-        <input type="text" name="embed_model" value="nomic-embed-text">
+        <div class="input-wrap">
+          <input type="text" name="embed_model" value="nomic-embed-text" autocomplete="off">
+        </div>
       </div>
 
-      <div class="section">Tunables</div>
-      <div class="row">
-        <div>
-          <label>Max files to analyse</label>
-          <input type="number" name="max_files" value="50" min="1" max="500">
+      <h2>Tunables</h2>
+      <div class="grid-2">
+        <div class="field">
+          <label>Max files to analyse <span class="hint">files</span></label>
+          <div class="input-wrap">
+            <input type="number" name="max_files" value="50" min="1" max="500" autocomplete="off">
+          </div>
         </div>
-        <div>
-          <label>Confidence gate (0–1)</label>
-          <input type="text" name="confidence_gate" value="0.80">
+        <div class="field">
+          <label>Confidence gate <span class="hint">0–1</span></label>
+          <div class="input-wrap">
+            <input type="text" name="confidence_gate" value="0.80" autocomplete="off">
+          </div>
         </div>
       </div>
-      <div class="checkbox-row">
-        <input type="checkbox" name="force_mock" id="force_mock">
-        <label for="force_mock" style="margin:0;color:#e6edf3">
-          Force mock mode <span class="hint">(ignore all keys, run fully offline)</span>
+
+      <div class="switch-row">
+        <label class="switch">
+          <input type="checkbox" name="force_mock" id="force_mock">
+          <span class="switch-slider"></span>
         </label>
+        <span class="switch-label">Force mock mode</span>
+        <span class="switch-hint">(ignore all keys, run fully offline)</span>
       </div>
 
       <button type="submit" class="submit-btn">▶ Start Analysis</button>
+      <p class="submit-hint">Blank keys run everything in deterministic mock mode.</p>
+
     </form>
   </div>
 </div>
 <script>
-  fetch('/health').then(r => r.json()).then(function(d) {
-    setBadge('qdrant-badge', d.qdrant, 'localhost:6333');
-    setBadge('ollama-badge', d.ollama, 'localhost:11434');
-  }).catch(function() {
-    setBadge('qdrant-badge', false, 'localhost:6333');
-    setBadge('ollama-badge', false, 'localhost:11434');
-  });
-  function setBadge(id, ok, addr) {
-    var el = document.getElementById(id);
-    el.textContent = ok ? '● Running' : '○ Not detected';
-    el.className = 'badge ' + (ok ? 'ok' : 'err');
-  }
+  (function() {
+    // Password visibility toggles
+    document.querySelectorAll('.toggle-pw').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = this.getAttribute('data-target');
+        var input = document.getElementById(targetId);
+        if (!input) return;
+        if (input.type === 'password') {
+          input.type = 'text';
+          this.textContent = '🙈';
+        } else {
+          input.type = 'password';
+          this.textContent = '👁';
+        }
+      });
+    });
+
+    // Health check badges
+    fetch('/health').then(function(r) { return r.json(); }).then(function(d) {
+      setBadge('qdrant-badge', d.qdrant, 'localhost:6333');
+      setBadge('ollama-badge', d.ollama, 'localhost:11434');
+    }).catch(function() {
+      setBadge('qdrant-badge', false, 'localhost:6333');
+      setBadge('ollama-badge', false, 'localhost:11434');
+    });
+    function setBadge(id, ok, addr) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = ok ? '● Running' : '○ Not detected';
+      el.className = 'badge ' + (ok ? 'ok' : 'err');
+    }
+  })();
 </script>
 </body>
 </html>{{end}}`
