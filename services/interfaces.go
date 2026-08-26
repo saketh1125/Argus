@@ -61,14 +61,14 @@ type CompletionResponse struct {
 // RateLimiter inside the implementation.
 type LLMClient interface {
 	Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error)
-	// Name identifies the active adapter, e.g. "nim:llama-3.1-70b" or "mock".
+	// Name identifies the active adapter, e.g. "nim:openai/gpt-oss-120b" or "mock".
 	Name() string
 	// Live reports whether this is a real (true) or mock (false) adapter.
 	Live() bool
 }
 
 // ---------------------------------------------------------------------------
-// Embeddings (Ollama -> Jina -> Gemini -> MiniLM fallback chain)
+// Embeddings (Ollama -> Jina -> Gemini -> deterministic hash fallback chain)
 // ---------------------------------------------------------------------------
 
 // EmbeddingClient turns text into vectors. Implementations encapsulate the

@@ -175,7 +175,7 @@ I want CodeSentinel to generate a Summary Issue listing all Medium and Low prior
 - System shall attempt local embedding via nomic-embed-text (Ollama) first.
 - On failure, system shall fall back to Jina AI API.
 - On failure, system shall fall back to Google Gemini Embedding API.
-- On failure, system shall fall back to all-MiniLM-L6-v2 on CPU.
+- On failure, system shall fall back to a deterministic built-in hash embedding (pure Go, in-process).
 - Fallback detection shall be automatic at startup with no manual configuration required.
 
 ### FR-09: Dashboard

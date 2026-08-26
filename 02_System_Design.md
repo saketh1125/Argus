@@ -93,7 +93,7 @@ The system is built on three core principles:
 | Embeddings (primary) | nomic-embed-text v1.5 | via Ollama | 274MB, 300MB VRAM, 8192 token context, free |
 | Embeddings (fallback 1) | jina-embeddings-v2-base-code | Jina AI API | Code-specialized, free tier |
 | Embeddings (fallback 2) | gemini-embedding-2 | Google AI API | Free via AI Studio, MTEB code 84.0 |
-| Embeddings (fallback 3) | all-MiniLM-L6-v2 | CPU local | 46MB, last resort |
+| Embeddings (fallback 3) | Built-in hash embedding | Pure Go, in-process | Deterministic 256-dim, zero-dependency last resort |
 | Code Sandbox | E2B | Go SDK | 78ms spinup, Firecracker microVM, free $100 credit |
 | Diff Generation | go-diff | v1.3 | Programmatic unified diff, no LLM diff format risk |
 | Dashboard | Templ + HTMX | Latest | Single binary, no separate frontend server |
@@ -405,7 +405,7 @@ const (
     ModeLocal     EmbeddingMode = "local_ollama"
     ModeJinaAPI   EmbeddingMode = "jina_api"
     ModeGeminiAPI EmbeddingMode = "gemini_api"
-    ModeMiniLM    EmbeddingMode = "minilm_cpu"
+    ModeHash     EmbeddingMode = "hash_embed"
 )
 
 type EmbeddingService struct {
@@ -415,7 +415,7 @@ type EmbeddingService struct {
 
 func NewEmbeddingService() *EmbeddingService {
     // Auto-detect at startup
-    // Priority: local → jina api → gemini api → minilm cpu
+    // Priority: local → jina api → gemini api → built-in hash embedding
 }
 
 func (e *EmbeddingService) Embed(text string) ([]float32, error) {
@@ -427,7 +427,8 @@ func (e *EmbeddingService) Embed(text string) ([]float32, error) {
 1. Attempt `ollama.Embed("nomic-embed-text", "test")` → success: use local
 2. Check `JINA_API_KEY` env var + ping → success: use Jina API
 3. Check `GEMINI_API_KEY` env var + ping → success: use Gemini API
-4. Fallback: load `all-MiniLM-L6-v2` via sentence-transformers Python subprocess
+4. Fallback: use the built-in deterministic hash embedding (pure Go, no external
+   process or model download — keeps the zero-dependency single-binary property)
 
 ---
 

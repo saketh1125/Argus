@@ -291,7 +291,7 @@ type CompletionResponse struct {
 
 type LLMClient interface {
     Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error)
-    Name() string // e.g. "nim:meta/llama-3.1-70b-instruct" or "mock-llm"
+    Name() string // e.g. "nim:openai/gpt-oss-120b" or "mock-llm"
     Live() bool   // real adapter (true) vs mock (false)
 }
 ```
@@ -517,7 +517,7 @@ StagePR="Raising PRs"  StageDone="Complete"
 ```json
 POST /chat/completions
 {
-  "model": "meta/llama-3.1-70b-instruct",
+  "model": "openai/gpt-oss-120b",
   "messages": [
     {"role": "system", "content": "{system_prompt}"},
     {"role": "user",   "content": "{user_content}"}
@@ -683,7 +683,7 @@ Ruby:       ruby -c {file}
 **Mode:** Local Docker instance  
 **Port:** `6333`  
 **Collection name:** `codesentinel_signatures`  
-**Vector dimensions:** 768 (nomic-embed-text) | 768 (jina-v2-code) | 384 (MiniLM)
+**Vector dimensions:** 768 (nomic-embed-text) | 768 (jina-v2-code) | 256 (built-in hash)
 
 **Upsert (during preprocessing):**
 ```json
@@ -866,7 +866,7 @@ GEMINI_API_KEY=               # embedding fallback 2
 
 # --- LLM endpoint ---
 NIM_BASE_URL=https://integrate.api.nvidia.com/v1
-NIM_MODEL=meta/llama-3.1-70b-instruct
+NIM_MODEL=openai/gpt-oss-120b
 
 # --- Local services ---
 OLLAMA_HOST=http://localhost:11434
