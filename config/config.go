@@ -92,7 +92,7 @@ func Load() *Config {
 		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
 		NIMAPIKey:    os.Getenv("NIM_API_KEY"),
 		NIMBaseURL:   envOr("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-		NIMModel:     envOr("NIM_MODEL", "meta/llama-3.1-70b-instruct"),
+		NIMModel:     envOr("NIM_MODEL", "openai/gpt-oss-120b"),
 		JinaAPIKey:   os.Getenv("JINA_API_KEY"),
 		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 		E2BAPIKey:    os.Getenv("E2B_API_KEY"),
