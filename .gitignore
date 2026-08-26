@@ -18,6 +18,9 @@ codesentinel-sbx-*
 # cross-run dedup state (per-checkout runtime file)
 .codesentinel-dedup.json
 
+# control-panel runtime pid tracking
+.codesentinel_pids.json
+
 # Claude Code local session data
 .claude/
 
