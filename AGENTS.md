@@ -3,7 +3,7 @@
 ## Authority and execution discipline
 
 - Read `EXECUTION_PLAN.md` completely before beginning work. It is the sole authority for product scope, implementation order and acceptance criteria. This file supplies operating conventions, not another plan.
-- Follow phases sequentially and respect every exit gate. Stop and report at each phase boundary; never start the next phase automatically. Earlier PRDs, `FRONTEND_CONTEXT.md`, `INCOMPLETE_PARTS_REPORT.md` and `plans/` are reference-only; preserve them and flag conflicts.
+- Follow phases sequentially and respect every exit gate. At each phase boundary, record gate evidence and report progress; stop unless the user has explicitly authorized autonomous continuation. Never proceed past an unmet gate. Earlier PRDs, `FRONTEND_CONTEXT.md`, `INCOMPLETE_PARTS_REPORT.md` and `plans/` are reference-only; preserve them and flag conflicts.
 - Before editing, inspect branch, HEAD, status and diffs, then relevant source, callers, tests and configuration. Preserve user changes. Never reset, clean, force-push or discard unrelated work.
 - Make small, task-scoped changes. Preserve working behavior and existing interfaces unless the current plan task requires changing them. Avoid unnecessary refactoring, architecture replacement, frameworks or dependencies.
 - Write meaningful tests alongside implementation, including failure paths and trust boundaries. Never claim tests, builds, sandbox validation or deployment passed without executing and observing them.
@@ -36,4 +36,4 @@
 
 ## Session entry
 
-Read the canonical progress tracker for the current handoff. Initialization did not certify the implementation baseline. The next task is **P0.1 — Establish local baseline**, followed by sequential Phase 0 work only when authorized. Stop at the Phase 0 boundary.
+Read the canonical progress tracker for the current handoff. Follow the user’s current authorization for continuation; never proceed past an unmet phase exit gate.

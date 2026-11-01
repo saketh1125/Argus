@@ -38,7 +38,7 @@ Report:
 - Blockers or decisions needed.
 - Whether the phase exit gate is met.
 
-Stop at the phase boundary. Do not silently continue into the next phase.
+At each phase boundary, record and report the gate evidence. Stop unless the user has explicitly authorized autonomous continuation; with such authorization, proceed only after the exit gate is satisfied.
 
 ### Authority of other repository documents
 
@@ -993,16 +993,20 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - The local repository copy followed symlinks and could copy files outside the selected tree. It now rejects symlinks and other non-regular entries. A regression with a link to an external file failed before the change and passes afterward; `go test -count=1 ./tools` passed in a credential-free checkout. This path-based check does not eliminate races against concurrent filesystem mutation, nor does it impose copy-size limits; these remain open.
 - Hosted CI run [41311845886](https://github.com/saketh1125/Argus/actions/runs/41311845886) for `10a9f327eb0ef7f34f2e69960d32a5b1d75fa3e6` was in progress when last checked. The subsequent symlink fix is not part of that run. Phase 0 remains in progress; validation and publication remain disabled.
 
+### P0 continuation — local-copy verification
+
+- Hosted CI [41311845886](https://github.com/saketh1125/Argus/actions/runs/41311845886) succeeded for `10a9f327eb0ef7f34f2e69960d32a5b1d75fa3e6`.
+- After `1b1e7edcf7f4bf40b2338a20103d8a2ede3bd592`, full credential-free local checks (`go test -count=1 ./...`, race tests, vet, build and formatting) passed with loopback access. Hosted CI [41311911773](https://github.com/saketh1125/Argus/actions/runs/41311911773) succeeded for that exact commit. Phase 0 remains in progress; no isolated provider, authenticated approval chain, or fork publication is enabled.
+
+### P0 continuation — authorized execution and archive preparation
+
+- The user explicitly authorized continuous work in this session, including automatic transition after the Phase 0 exit gate is satisfied. Updated the phase-boundary operating instructions without relaxing gates or security requirements. The previous progress record and hosted CI evidence were preserved.
+- Added deterministic bounded archive preparation for regular file maps, rejecting absolute, traversal, noncanonical, backslash, NUL, oversized and conflicting paths. Adversarial unit tests cover invalid paths, size, count, conflicts, contents and determinism. Tests initially failed to compile before implementation and passed afterward. This utility is not wired to an executor and proves neither safe extraction nor isolation; the unavailable provider remains in force.
+- Credential-free checkout checks with loopback access: `go test -count=1 ./...`, `go test -race -count=1 ./...`, `go vet ./...`, `go build ./...` passed; `gofmt -l .` returned no files. Hosted CI for the commit containing these changes remains to be observed. Phase 0 is still IN PROGRESS.
+
 ### Current next action
 
-Start **P0.1 — Establish local baseline**. Do not add features yet.
-
-1. Inspect git status and current commit.
-2. Run and record current test/build checks.
-3. Reproduce current adapter selection.
-4. Trace unsafe sandbox execution and incomplete patch fallback.
-5. Implement and test the two P0 fixes.
-6. Stop and report against the P0 exit gate.
+Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.
 
 ---
 
