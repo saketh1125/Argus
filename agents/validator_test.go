@@ -135,3 +135,25 @@ func TestSyntaxCommandsUseArgvAndRejectUnsupportedLanguage(t *testing.T) {
 		t.Fatal("unsupported language must not pass")
 	}
 }
+
+type unavailableTestSandbox struct{}
+
+func (unavailableTestSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	return nil, services.ErrSandboxUnavailable
+}
+func (unavailableTestSandbox) Name() string { return "unavailable" }
+func (unavailableTestSandbox) Live() bool   { return false }
+
+func TestValidatorDemotesWhenProviderUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Validated: true, Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	v := NewValidator(unavailableTestSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil || iss.Validated || !iss.Demoted || !strings.Contains(iss.ValidationLog, "unavailable") {
+		t.Fatalf("provider failure must invalidate validation: issue=%+v err=%v", iss, err)
+	}
+}
