@@ -1113,6 +1113,25 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - The validator now constructs its existing provenance model from the pinned original, generated complete-file diff and patched bytes, uses those hashes in its sandbox request, and rechecks the staged target bytes after a provider response. A fake provider that mutates the staged target is rejected with an explicit error; this regression failed before the change and passed afterward. The check does not attest what a provider executed, authenticate approval, or verify the entire execution environment. Validation and publication remain disabled.
 - In a credential-free checkout with loopback available, full tests and race tests, vet, build and formatting passed. Hosted CI [41316425101](https://github.com/saketh1125/Argus/actions/runs/41316425101) passed for `0f7194f6a92de3e9cc350b2e363de3a070d9e890`; CI for this change is pending. Phase 0 remains incomplete.
 
+### P0 continuation — initial ownership-record primitive
+
+- Added an unintegrated experimental record-preparation primitive that creates distinct random run IDs and SHA-256 ownership digests in exclusive mode-0600 files under a mode-0700 directory, and syncs the file and directory. Focused temporary-directory tests passed five repetitions; `go test -race ./services/...` and `go test ./...` passed in a credential-free checkout with loopback. No Docker integration was exercised.
+- This is not a complete ownership store: atomic replacement, inter-process locking, full directory ownership and race protection, lifecycle transitions, labels, reconciliation and recovery remain unimplemented. A crash may leave an incomplete record. It is not connected to the existing experimental adapter; its name-based cleanup and uncertain-create race remain unresolved. The factory continues to select the unavailable sandbox and publication remains disabled. Phase 0 is incomplete.
+
+### P0 continuation — ownership transition primitive
+
+- Added an unintegrated lifecycle transition predicate and tests, including rejection of `create_uncertain → removed`. This does not persist or enforce transitions and does not change Docker execution or cleanup. Focused tests passed five repetitions, `go test -race ./services/...` passed, and `go test ./...` passed (some package results cached), in a credential-free checkout with loopback. No Docker integration was run. The existing uncommitted record changes are preserved; adapter integration, cross-process locking, atomic updates, ownership verification and reconciliation remain open. Phase 0 remains incomplete.
+
+### P0 continuation — disabled prototype creation guard
+
+- The experimental adapter now prepares an ownership record when explicitly configured and refuses to contact Docker while ownership recovery is incomplete. This is only a fail-closed guard, not the requested integrated lifecycle: the old name-based cleanup code still exists behind the guard, and durable transitions, labels and reconciliation remain unimplemented. The production factory remains unavailable.
+- The focused guard and ownership tests passed. `go test -race ./services/...` and `go test ./...` failed because two existing prototype tests expect the old cleanup execution path; those assertions were preserved. No Docker integration ran. Changes are incomplete and uncommitted; Phase 0 remains incomplete.
+
+### P0 continuation — fail-closed prototype stabilization
+
+- Reproduced the two service race-test failures: both were obsolete cleanup-path assertions; no data race was reported. Removed the experimental adapter's Docker create/start/exec and name-based cleanup path entirely. Replaced those expectations with tests that missing or failed persistence and unavailable recovery cannot contact Docker, and that an existing uncertain record is left untouched. No claim of recovery is made; no new uncertain create is submitted.
+- Focused Docker and ownership tests passed five repetitions; `go test -race -count=1 ./services/...` and `go test -count=1 ./...` passed in a credential-free checkout with loopback. No real Docker integration was run. Docker execution, ownership locking and reconciliation remain unimplemented; the provider remains disabled and Phase 0 incomplete.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.

@@ -2,12 +2,28 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
+
+func TestDockerPrototypePreservesUncertainRecord(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "unresolved.json")
+	contents := []byte(`{"state":"create_uncertain"}`)
+	if err := os.WriteFile(path, contents, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &dockerSandbox{image: "sha256:" + strings.Repeat("a", 64), ownershipDir: dir}
+	called := false
+	s.callOverride = func(context.Context, []byte, ...string) (string, string, error) { called = true; return "", "", nil }
+	res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1})
+	got, readErr := os.ReadFile(path)
+	if res != nil || err == nil || called || readErr != nil || string(got) != string(contents) {
+		t.Fatalf("unresolved record changed or daemon contacted: %v %v %t %v", res, err, called, readErr)
+	}
+}
 
 func TestDockerPrototypeRejectsUntrustedCommandsBeforeExecution(t *testing.T) {
 	s := &dockerSandbox{docker: "/missing/docker", image: "sha256:" + strings.Repeat("a", 64)}
@@ -51,58 +67,35 @@ func TestDockerPrototypeHonorsAlreadyCancelledContext(t *testing.T) {
 	}
 }
 
-func TestDockerPrototypeCleanupFailsClosedWhenDaemonUnavailable(t *testing.T) {
-	s := &dockerSandbox{docker: "/missing/docker", image: "sha256:" + strings.Repeat("a", 64)}
-	if err := s.cleanup("argus-experimental-test"); err == nil {
-		t.Fatal("unverifiable cleanup accepted")
-	}
-}
-
-func TestDockerPrototypeNeverSucceedsWhenCleanupCannotBeVerified(t *testing.T) {
-	s := &dockerSandbox{image: "sha256:" + strings.Repeat("a", 64)}
-	s.callOverride = func(_ context.Context, _ []byte, args ...string) (string, string, error) {
-		switch args[0] {
-		case "create", "start", "exec":
-			return "", "", nil
-		case "rm", "inspect":
-			return "", "daemon unavailable", fmt.Errorf("daemon unavailable")
-		default:
-			return "", "", fmt.Errorf("unexpected command")
-		}
+func TestDockerPrototypeDoesNotContactDaemonWithoutRecovery(t *testing.T) {
+	s := &dockerSandbox{image: "sha256:" + strings.Repeat("a", 64), ownershipDir: t.TempDir()}
+	called := false
+	s.callOverride = func(context.Context, []byte, ...string) (string, string, error) {
+		called = true
+		return "", "", nil
 	}
 	res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1})
-	if res != nil || err == nil || !strings.Contains(err.Error(), "cleanup") {
-		t.Fatalf("unverified cleanup accepted: %+v %v", res, err)
+	if res != nil || err == nil || called {
+		t.Fatalf("unrecoverable lifecycle contacted daemon: result=%+v err=%v called=%t", res, err, called)
 	}
 }
 
-func TestDockerPrototypeCancelsAndCleansUp(t *testing.T) {
-	s := &dockerSandbox{image: "sha256:" + strings.Repeat("a", 64)}
-	removed, checked := false, false
-	s.callOverride = func(ctx context.Context, input []byte, args ...string) (string, string, error) {
-		switch args[0] {
-		case "create", "start":
-			return "", "", nil
-		case "exec":
-			if input != nil {
-				return "", "", nil
-			}
-			<-ctx.Done()
-			return "", "", ctx.Err()
-		case "rm":
-			removed = true
-			return "", "", nil
-		case "inspect":
-			checked = true
-			return "", "no such object", fmt.Errorf("not found")
-		default:
-			return "", "", fmt.Errorf("unexpected command")
-		}
+func TestDockerPrototypePersistenceFailurePreventsDocker(t *testing.T) {
+	s := &dockerSandbox{image: "sha256:" + strings.Repeat("a", 64), ownershipDir: t.TempDir() + "/missing"}
+	called := false
+	s.callOverride = func(context.Context, []byte, ...string) (string, string, error) { called = true; return "", "", nil }
+	res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1})
+	if res != nil || err == nil || called {
+		t.Fatalf("persistence failure contacted daemon: %+v %v called=%t", res, err, called)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	res, err := s.Run(ctx, SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1})
-	if res != nil || !errors.Is(err, context.DeadlineExceeded) || !removed || !checked {
-		t.Fatalf("deadline did not clean up: %+v %v removed=%t checked=%t", res, err, removed, checked)
+}
+
+func TestDockerPrototypeMissingOwnershipPreventsDocker(t *testing.T) {
+	s := &dockerSandbox{image: "sha256:" + strings.Repeat("a", 64)}
+	called := false
+	s.callOverride = func(context.Context, []byte, ...string) (string, string, error) { called = true; return "", "", nil }
+	res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1})
+	if res != nil || err == nil || called {
+		t.Fatalf("missing ownership contacted daemon: %+v %v called=%t", res, err, called)
 	}
 }
