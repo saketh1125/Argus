@@ -102,10 +102,13 @@ type VectorStore interface {
 // SandboxSpec describes a one-shot sandbox execution: write Files, then run
 // Commands in order, for at most TimeoutSec seconds.
 type SandboxSpec struct {
-	Language   string
-	Files      map[string]string // relative path -> content
-	Commands   [][]string        // argv arrays, executed in order; first failure stops
-	TimeoutSec int
+	// RepositoryContext is set only when the complete pinned checkout has been
+	// staged and verified, not when only a target file is supplied.
+	RepositoryContext bool
+	Language          string
+	Files             map[string]string // relative path -> content
+	Commands          [][]string        // argv arrays, executed in order; first failure stops
+	TimeoutSec        int
 }
 
 // ValidationLevel records the strongest check actually executed.

@@ -59,10 +59,18 @@ func (passSandbox) IsolationVerified() bool { return true }
 
 var _ services.Sandbox = passSandbox{}
 
-// TestValidatorCapturesPatchedFile proves the data flow behind the
-// destructive-overwrite fix: when validation passes, the validator stores the
-// FULL patched file content on the selected candidate so the PR agent can commit
-// a single-function edit rather than replacing the whole file.
+type captureValidationSandbox struct{ spec services.SandboxSpec }
+
+func (s *captureValidationSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
+	s.spec = spec
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
+}
+func (*captureValidationSandbox) Name() string            { return "capture-validation" }
+func (*captureValidationSandbox) Live() bool              { return true }
+func (*captureValidationSandbox) IsolationVerified() bool { return true }
+
+// TestValidatorCapturesPatchedFile checks whole-file preservation and rejects
+// falsely claimed repository-context validation for single-file staging.
 func TestValidatorCapturesPatchedFile(t *testing.T) {
 	// Original file on disk contains TWO functions; only f is being fixed.
 	origFile := "package main\n\nfunc f() int {\n\treturn 1\n}\n\nfunc g() {}\n"
@@ -86,33 +94,22 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	}
 
 	pinValidationIssue(t, dir, iss)
-	v := NewValidator(passSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	sandbox := &captureValidationSandbox{}
+	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	out, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	got := out[0]
-	if !got.Validated {
-		t.Fatal("expected Validated=true")
+	if got.Validated || !got.Demoted || got.Fix.Selected != nil {
+		t.Fatal("single-file staging must not be marked repository-context validated")
 	}
-	if got.Fix == nil || got.Fix.Selected == nil {
-		t.Fatal("expected a selected candidate")
+	patched := sandbox.spec.Files["f.go"]
+	if !strings.Contains(patched, "return 2") || !strings.Contains(patched, "func g()") {
+		t.Fatalf("staged patch must preserve sibling code: %q", patched)
 	}
-
-	// PatchedFile must be the FULL file with f rewritten — i.e. it must still
-	// contain the untouched sibling function g(), proving the whole file was
-	// preserved and only f was edited.
-	if got.Fix.Selected.PatchDigest != fmt.Sprintf("%x", sha256.Sum256([]byte(got.Fix.Selected.Diff))) || got.Fix.Selected.Diff == "d" {
-		t.Fatal("expected digest of the full-file diff")
-	}
-	if got.Fix.Selected.PatchedFile == "" {
-		t.Fatal("expected Selected.PatchedFile to be populated with the full patched file")
-	}
-	if !strings.Contains(got.Fix.Selected.PatchedFile, "return 2") {
-		t.Errorf("patched file should contain the rewrite; got %q", got.Fix.Selected.PatchedFile)
-	}
-	if !strings.Contains(got.Fix.Selected.PatchedFile, "func g()") {
-		t.Errorf("patched file must preserve sibling code (func g); got %q", got.Fix.Selected.PatchedFile)
+	if sandbox.spec.RepositoryContext {
+		t.Fatal("single-file spec claimed repository context")
 	}
 }
 
@@ -223,7 +220,7 @@ func TestValidatorRejectsSourceChangedDuringSandbox(t *testing.T) {
 	pinValidationIssue(t, dir, iss)
 	v := NewValidator(mutationSandbox{file}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
-	if err != nil || iss.Validated || !iss.Demoted {
+	if err != nil || iss.Validated || !iss.Demoted || !strings.Contains(iss.ValidationLog, "base file changed during validation") {
 		t.Fatalf("source mutation accepted: issue=%+v err=%v", iss, err)
 	}
 }
@@ -304,7 +301,7 @@ func TestValidatorRejectsCommitChangedDuringSandbox(t *testing.T) {
 	pinValidationIssue(t, dir, iss)
 	v := NewValidator(commitMutationSandbox{t, dir}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
-	if err != nil || iss.Validated || !iss.Demoted {
+	if err != nil || iss.Validated || !iss.Demoted || !strings.Contains(iss.ValidationLog, "pinned source changed during validation") {
 		t.Fatalf("changed commit accepted: %+v %v", iss, err)
 	}
 }
@@ -332,7 +329,7 @@ func TestValidatorRejectsOriginChangedDuringSandbox(t *testing.T) {
 	pinValidationIssue(t, dir, iss)
 	v := NewValidator(originMutationSandbox{t, dir}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
-	if err != nil || iss.Validated || !iss.Demoted {
+	if err != nil || iss.Validated || !iss.Demoted || !strings.Contains(iss.ValidationLog, "pinned source changed during validation") {
 		t.Fatalf("changed origin accepted: %+v %v", iss, err)
 	}
 }
@@ -436,7 +433,7 @@ func TestValidatorRejectsInsufficientValidationEvidence(t *testing.T) {
 		level services.ValidationLevel
 		repo  bool
 	}{
-		{services.ValidationSyntax, true}, {services.ValidationTargetedTests, false}, {"", true},
+		{services.ValidationSyntax, true}, {services.ValidationTargetedTests, false}, {"", true}, {services.ValidationTargetedTests, true},
 	} {
 		dir := t.TempDir()
 		original := "package p\nfunc f() {}\n"

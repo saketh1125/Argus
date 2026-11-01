@@ -78,7 +78,7 @@ func (s *dockerSandbox) cleanup(name string) error {
 // Run accepts only fixed Python syntax checks and never interpolates shell text.
 // It is not production validation and does not execute repository tests.
 func (s *dockerSandbox) Run(ctx context.Context, spec SandboxSpec) (result *SandboxResult, err error) {
-	if s == nil || !dockerImageID.MatchString(s.image) || spec.Language != "python" || spec.TimeoutSec < 1 || spec.TimeoutSec > 60 || len(spec.Commands) == 0 || len(spec.Commands) > 10 {
+	if s == nil || !dockerImageID.MatchString(s.image) || spec.RepositoryContext || spec.Language != "python" || spec.TimeoutSec < 1 || spec.TimeoutSec > 60 || len(spec.Commands) == 0 || len(spec.Commands) > 10 {
 		return nil, fmt.Errorf("docker prototype: invalid specification")
 	}
 	archive, err := sandboxArchive(spec.Files)

@@ -135,7 +135,7 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			lastLog = fmt.Sprintf("attempt %d: sandbox error: %v", attempt+1, serr)
 			continue
 		}
-		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil && res.RepositoryContext && (res.Level == services.ValidationTargetedTests || res.Level == services.ValidationProjectTests) {
+		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil {
 			resolvedNow, pathErr := filepath.EvalSymlinks(absPath)
 			if pathErr != nil || resolvedNow != resolved {
 				lastLog = "base file changed during validation"
@@ -150,6 +150,10 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			// commit a single-function edit instead of replacing the whole file.
 			if err := tools.VerifyPinnedFile(ctx, workdir, cand.Repository, cand.BaseCommit, filepath.ToSlash(iss.File), current); err != nil {
 				lastLog = fmt.Sprintf("pinned source changed during validation: %v", err)
+				continue
+			}
+			if !spec.RepositoryContext || !res.RepositoryContext || (res.Level != services.ValidationTargetedTests && res.Level != services.ValidationProjectTests) {
+				lastLog = "validation unavailable: insufficient repository-context test evidence"
 				continue
 			}
 			cand.PatchedFile = patched

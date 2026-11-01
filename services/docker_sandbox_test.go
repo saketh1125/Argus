@@ -16,6 +16,7 @@ func TestDockerPrototypeRejectsUntrustedCommandsBeforeExecution(t *testing.T) {
 		{Language: "python", Files: map[string]string{"../escape": "x"}, Commands: [][]string{{"python3", "-m", "py_compile", "../escape"}}, TimeoutSec: 1},
 		{Language: "python", Files: map[string]string{"f.py": "x"}, Commands: [][]string{{"python3", "-m", "py_compile", "missing.py"}}, TimeoutSec: 1},
 		{Language: "python", Files: map[string]string{"f.py": "x"}, Commands: nil, TimeoutSec: 1},
+		{RepositoryContext: true, Language: "python", Files: map[string]string{"f.py": "x"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1},
 		{Language: "python", Files: map[string]string{"f.py": "x"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 0},
 		{Language: "python", Files: map[string]string{"f.py": "x"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 61},
 		{Language: "javascript", Files: map[string]string{"f.py": "x"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 1},
