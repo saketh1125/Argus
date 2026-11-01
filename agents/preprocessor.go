@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -146,6 +147,7 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 			p.rep.Log("preprocessor: parse %s: %v", c.rel, perr)
 			continue
 		}
+		pf.SourceHash = fmt.Sprintf("%x", sha256.Sum256(data))
 		pf.ModTime = c.mod
 		idx.AddFile(pf)
 	}

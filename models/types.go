@@ -194,6 +194,7 @@ type ParsedFile struct {
 	Path       string      `json:"path"`
 	Language   string      `json:"language"`
 	Content    string      `json:"content"`
+	SourceHash string      `json:"source_hash,omitempty"` // SHA-256 of original bytes before sanitization
 	ModTime    int64       `json:"mod_time"`
 	Signatures []Signature `json:"signatures"`
 	Imports    []string    `json:"imports"`

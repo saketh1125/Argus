@@ -12,9 +12,10 @@ func TestFixGeneratorProducesDiff(t *testing.T) {
 	idx := models.NewRepoIndex()
 	idx.SetSourceRevision("github.com/owner/repo", strings.Repeat("a", 40))
 	idx.AddFile(&models.ParsedFile{
-		Path:     "calc.go",
-		Language: "go",
-		Content:  "func Div(a, b int) int {\n\treturn a / b\n}\n",
+		Path:       "calc.go",
+		SourceHash: strings.Repeat("b", 64),
+		Language:   "go",
+		Content:    "func Div(a, b int) int {\n\treturn a / b\n}\n",
 		Signatures: []models.Signature{
 			{Name: "Div", Kind: "function", File: "calc.go", LineStart: 1, LineEnd: 3,
 				Body: "func Div(a, b int) int {\n\treturn a / b\n}"},
@@ -50,6 +51,9 @@ func TestFixGeneratorProducesDiff(t *testing.T) {
 	}
 	if out[0].Fix.Selected.Repository != "github.com/owner/repo" || out[0].Fix.Selected.BaseCommit != strings.Repeat("a", 40) {
 		t.Fatal("candidate lost repository revision identity")
+	}
+	if out[0].Fix.Selected.BaseHash != strings.Repeat("b", 64) {
+		t.Fatal("candidate lost original byte hash")
 	}
 	if out[0].Fix.OriginalFunction == "" {
 		t.Error("expected OriginalFunction to be captured")

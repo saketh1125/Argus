@@ -1053,6 +1053,11 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - To protect host reads during indexing, non-regular/symlink and files over 1 MiB are skipped and reads are confined using `os.Root` with a bounded reader. Tests cover an external symlink and oversized file. This does not prove an immutable snapshot, eliminate special-file races, prevent mount traversal or implement the full Phase 1 discovery policy. Failed clones now remove their partial checkout; a regression covers cleanup.
 - Full credential-free local tests and race tests, vet, build, formatting and tagged-test vet passed with loopback access. A mock run showed `sandbox=unavailable`, `source: revision unavailable`, zero PRs and demoted findings. Hosted CI [41313564643](https://github.com/saketh1125/Argus/actions/runs/41313564643) passed for `5771113791ae641bfb2450c59c557742cab1aeb5`; hosted CI for the commit containing this entry is pending. All Phase 0 gates remain open where evidence is missing; Phase 1 has not started.
 
+### P0 continuation — preserve original-byte hashes
+
+- Ingestion records SHA-256 of the original source bytes before LLM sanitization and fix generation carries that hash forward. A regression uses source altered by the sanitizer and verifies the raw-byte hash, plus candidate propagation. Exact function application still fails closed when sanitization prevents a verbatim match; this change does not imply successful validation or complete provenance.
+- Full credential-free local tests and race tests, vet, build and formatting passed with loopback access. Hosted CI [41314228837](https://github.com/saketh1125/Argus/actions/runs/41314228837) passed for `c449b5e0a310846724acc90c225252921f84f5ae`; hosted CI for this new change is pending. The sandbox provider and authenticated fork publication remain unavailable; Phase 0 remains incomplete.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.

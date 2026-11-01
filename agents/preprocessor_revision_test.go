@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -68,7 +69,8 @@ func TestPreprocessorRecordsLiveRepositoryRevision(t *testing.T) {
 		}
 	}
 	run("init", "-q")
-	if err := os.WriteFile(filepath.Join(source, "file.go"), []byte("package fixture\nfunc F() {}\n"), 0600); err != nil {
+	rawSource := "package fixture\nfunc F() {}\n// " + strings.Repeat("A", 210) + "\n"
+	if err := os.WriteFile(filepath.Join(source, "file.go"), []byte(rawSource), 0600); err != nil {
 		t.Fatal(err)
 	}
 	outside := filepath.Join(t.TempDir(), "outside.go")
@@ -105,6 +107,13 @@ func TestPreprocessorRecordsLiveRepositoryRevision(t *testing.T) {
 	}
 	if _, exists := idx.GetFile("escape.go"); exists {
 		t.Fatal("indexed a symlink outside the checkout")
+	}
+	parsed, exists := idx.GetFile("file.go")
+	if !exists || parsed.SourceHash != fmt.Sprintf("%x", sha256.Sum256([]byte(rawSource))) {
+		t.Fatal("original file hash missing or incorrect")
+	}
+	if parsed.Content == rawSource {
+		t.Fatal("expected sanitizer to alter the test fixture")
 	}
 	repo, commit := idx.SourceRevision()
 	if repo != "github.com/owner/repo" || commit != expected {
