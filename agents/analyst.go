@@ -164,7 +164,10 @@ func (a *Analyst) analyze(ctx context.Context, idx *models.RepoIndex, t models.L
 		fnName = t.FunctionName
 	}
 
+	repository, commit := idx.SourceRevision()
 	issue := &models.Issue{
+		Repository:   repository,
+		BaseCommit:   commit,
 		File:         t.File,
 		FunctionName: fnName,
 		LineStart:    lineStart,

@@ -124,9 +124,12 @@ func (f *FixGenerator) candidate(ctx context.Context, idx *models.RepoIndex, iss
 	if !ok || file.Content == "" {
 		return models.FixCandidate{}, false
 	}
+	repository, commit := idx.SourceRevision()
 	baseHash := fmt.Sprintf("%x", sha256.Sum256([]byte(file.Content)))
 	diff := tools.UnifiedDiff(orig, res.RewrittenFunction, iss.File)
 	return models.FixCandidate{
+		Repository:        repository,
+		BaseCommit:        commit,
 		RewrittenFunction: res.RewrittenFunction,
 		BaseHash:          baseHash,
 		Diff:              diff,

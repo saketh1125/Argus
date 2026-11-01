@@ -75,6 +75,8 @@ const (
 // aggregator filters it, the fix generator attaches a Fix, the validator marks
 // it validated, and the PR agent turns it into a GitHub PR or summary row.
 type Issue struct {
+	Repository string `json:"repository,omitempty"`
+	BaseCommit string `json:"base_commit,omitempty"`
 	// Identity / location.
 	ID           string `json:"id"`
 	File         string `json:"file"`
@@ -118,6 +120,8 @@ func (i *Issue) DedupKey() string {
 // temperature. The diff is computed programmatically (go-diff) from the
 // original function to RewrittenFunction — never produced by the LLM directly.
 type FixCandidate struct {
+	Repository        string  `json:"repository,omitempty"`
+	BaseCommit        string  `json:"base_commit,omitempty"`
 	RewrittenFunction string  `json:"rewritten_function"`
 	Diff              string  `json:"diff"`
 	Confidence        float64 `json:"confidence"`
@@ -221,6 +225,8 @@ type PRResult struct {
 
 // RunReport is the final summary returned by the pipeline.
 type RunReport struct {
+	Repository     string     `json:"repository,omitempty"`
+	BaseCommit     string     `json:"base_commit,omitempty"`
 	RepoURL        string     `json:"repo_url"`
 	FilesAnalyzed  int        `json:"files_analyzed"`
 	IssuesFound    int        `json:"issues_found"`

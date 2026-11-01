@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/saketh1125/argus/models"
@@ -51,7 +52,9 @@ func TestAnalystConfirmsGoodIssue(t *testing.T) {
 	}}
 	a := NewAnalyst(llm, testConfig(), models.NoopReporter{})
 
-	issues, err := a.Run(context.Background(), newIndexWithFunc(), []models.LocationTarget{target()})
+	idx := newIndexWithFunc()
+	idx.SetSourceRevision("github.com/owner/repo", strings.Repeat("a", 40))
+	issues, err := a.Run(context.Background(), idx, []models.LocationTarget{target()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +62,9 @@ func TestAnalystConfirmsGoodIssue(t *testing.T) {
 		t.Fatalf("expected 1 confirmed issue, got %d", len(issues))
 	}
 	got := issues[0]
+	if got.Repository != "github.com/owner/repo" || got.BaseCommit != strings.Repeat("a", 40) {
+		t.Fatal("finding lost source revision")
+	}
 	if got.BugType != "null_dereference" || got.Severity != models.SeverityHigh {
 		t.Errorf("unexpected classification: %s/%s", got.BugType, got.Severity)
 	}

@@ -3,9 +3,11 @@ package agents
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
@@ -56,14 +58,32 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	}
 
 	if _, err = p.gh.Clone(ctx, repoURL, workdir); err != nil {
-		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone %q: %w", repoURL, err)
+		_ = os.RemoveAll(workdir)
+		return nil, "", owner, repo, fmt.Errorf("preprocessor: clone %q: %w", repoURL, err)
 	}
+	idx = models.NewRepoIndex()
+	sourceCommit := ""
+	if p.gh.Live() && perr == nil && owner != "" && repo != "" {
+		commit, resolveErr := tools.ResolveGitCommit(ctx, workdir)
+		if resolveErr != nil {
+			_ = os.RemoveAll(workdir)
+			return nil, "", owner, repo, fmt.Errorf("preprocessor: resolve revision: %w", resolveErr)
+		}
+		sourceCommit = commit
+		idx.SetSourceRevision("github.com/"+strings.ToLower(owner)+"/"+strings.ToLower(repo), commit)
+	}
+	root, rootErr := os.OpenRoot(workdir)
+	if rootErr != nil {
+		_ = os.RemoveAll(workdir)
+		return nil, "", owner, repo, fmt.Errorf("preprocessor: open checkout root: %w", rootErr)
+	}
+	defer root.Close()
 	p.rep.SetStage(models.StageIngest, 20)
 
 	// Walk the tree and collect supported files with their mod times.
 	type cand struct {
-		abs, rel string
-		mod      int64
+		rel string
+		mod int64
 	}
 	var cands []cand
 	_ = filepath.WalkDir(workdir, func(path string, d os.DirEntry, werr error) error {
@@ -82,14 +102,14 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 			return nil
 		}
 		info, ierr := d.Info()
-		if ierr != nil {
+		if ierr != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
 			return nil
 		}
 		rel, rerr := filepath.Rel(workdir, path)
 		if rerr != nil {
 			rel = path
 		}
-		cands = append(cands, cand{abs: path, rel: rel, mod: info.ModTime().UnixNano()})
+		cands = append(cands, cand{rel: rel, mod: info.ModTime().UnixNano()})
 		return nil
 	})
 
@@ -100,13 +120,24 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 		cands = cands[:maxFiles]
 	}
 
-	idx = models.NewRepoIndex()
 	total := len(cands)
 	for i, c := range cands {
 		p.rep.SetFilesProgress(i, total)
-		data, rerr := os.ReadFile(c.abs)
+		file, rerr := root.Open(c.rel)
 		if rerr != nil {
-			p.rep.Log("preprocessor: read %s: %v", c.rel, rerr)
+			p.rep.Log("preprocessor: open %s: %v", c.rel, rerr)
+			continue
+		}
+		info, statErr := file.Stat()
+		if statErr != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
+			_ = file.Close()
+			p.rep.Log("preprocessor: skip non-regular or oversized file %s", c.rel)
+			continue
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil || len(data) > 1<<20 {
+			p.rep.Log("preprocessor: read failed or file exceeded limit: %s", c.rel)
 			continue
 		}
 		sanitized := services.SanitizeForLLM(string(data))
@@ -119,6 +150,12 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 		idx.AddFile(pf)
 	}
 	p.rep.SetFilesProgress(total, total)
+	if sourceCommit != "" {
+		if err := tools.VerifyGitCommit(ctx, workdir, sourceCommit); err != nil {
+			_ = os.RemoveAll(workdir)
+			return nil, "", owner, repo, fmt.Errorf("preprocessor: source revision changed during indexing")
+		}
+	}
 	idx.BuildCallGraph()
 	p.rep.SetStage(models.StageIngest, 70)
 

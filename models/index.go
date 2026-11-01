@@ -7,10 +7,12 @@ import "sync"
 // preprocessor populates it (single writer) and the analyst goroutines read
 // from it in parallel, so every access goes through the RWMutex.
 type RepoIndex struct {
-	mu        sync.RWMutex
-	files     map[string]*ParsedFile
-	callGraph map[string]*CallGraphNode
-	sigs      []Signature
+	mu         sync.RWMutex
+	repository string
+	baseCommit string
+	files      map[string]*ParsedFile
+	callGraph  map[string]*CallGraphNode
+	sigs       []Signature
 }
 
 // NewRepoIndex returns an empty, ready-to-use index.
@@ -19,6 +21,21 @@ func NewRepoIndex() *RepoIndex {
 		files:     make(map[string]*ParsedFile),
 		callGraph: make(map[string]*CallGraphNode),
 	}
+}
+
+// SetSourceRevision records the repository and resolved commit used for indexing.
+// It does not certify that worktree contents still match that revision.
+func (r *RepoIndex) SetSourceRevision(repository, commit string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.repository, r.baseCommit = repository, commit
+}
+
+// SourceRevision returns the recorded repository identity and commit.
+func (r *RepoIndex) SourceRevision() (string, string) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.repository, r.baseCommit
 }
 
 // AddFile registers a parsed file and its signatures. Call BuildCallGraph once

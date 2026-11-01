@@ -167,6 +167,7 @@ func run() error {
 		return fmt.Errorf("pr creation: %w", err)
 	}
 	report.RepoURL = cfg.RepoURL
+	report.Repository, report.BaseCommit = idx.SourceRevision()
 	report.FilesAnalyzed = idx.FileCount()
 	report.Mode = clients.Mode
 	report.DurationMillis = time.Since(start).Milliseconds()
@@ -270,6 +271,11 @@ func pumpRPM(ctx context.Context, rep models.Reporter, lim services.RateLimiter)
 func printReport(r *models.RunReport) {
 	fmt.Println("\n\x1b[1m── Run Report ──────────────────────────────\x1b[0m")
 	fmt.Printf("  repo:           %s\n", r.RepoURL)
+	if r.BaseCommit != "" {
+		fmt.Printf("  source:         %s @ %s\n", r.Repository, r.BaseCommit)
+	} else {
+		fmt.Println("  source:         revision unavailable")
+	}
 	fmt.Printf("  mode:           %s\n", r.Mode)
 	fmt.Printf("  files analyzed: %d\n", r.FilesAnalyzed)
 	fmt.Printf("  issues found:   %d\n", r.IssuesFound)

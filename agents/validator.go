@@ -97,8 +97,16 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 	var lastLog string
 	for attempt := 0; attempt < maxTry; attempt++ {
 		cand := cands[attempt]
+		if cand.Repository == "" || cand.BaseCommit == "" || cand.Repository != iss.Repository || cand.BaseCommit != iss.BaseCommit {
+			lastLog = "finding and candidate provenance mismatch"
+			continue
+		}
 		if cand.BaseHash == "" || cand.BaseHash != fmt.Sprintf("%x", sha256.Sum256(original)) {
 			lastLog = "base file identity mismatch"
+			continue
+		}
+		if err := tools.VerifyPinnedFile(ctx, workdir, cand.Repository, cand.BaseCommit, filepath.ToSlash(iss.File), original); err != nil {
+			lastLog = fmt.Sprintf("pinned source unavailable: %v", err)
 			continue
 		}
 		patched, perr := v.patchedContent(string(original), iss.Fix.OriginalFunction, cand.RewrittenFunction)
@@ -130,6 +138,10 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			}
 			// Carry the validated full-file content forward so the PR agent can
 			// commit a single-function edit instead of replacing the whole file.
+			if err := tools.VerifyPinnedFile(ctx, workdir, cand.Repository, cand.BaseCommit, filepath.ToSlash(iss.File), current); err != nil {
+				lastLog = fmt.Sprintf("pinned source changed during validation: %v", err)
+				continue
+			}
 			cand.PatchedFile = patched
 			cand.Diff = tools.UnifiedDiff(string(original), patched, iss.File)
 			if cand.Diff == "" {
