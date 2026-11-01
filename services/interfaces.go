@@ -122,4 +122,7 @@ type Sandbox interface {
 	Run(ctx context.Context, spec SandboxSpec) (*SandboxResult, error)
 	Name() string
 	Live() bool
+	// IsolationVerified is true only after the provider and execution policy
+	// satisfy the security verification required by the execution plan.
+	IsolationVerified() bool
 }

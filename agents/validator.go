@@ -61,6 +61,11 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 	if iss.Fix != nil {
 		iss.Fix.Selected = nil
 	}
+	if v.sandbox == nil || !v.sandbox.IsolationVerified() {
+		iss.Demoted = true
+		iss.ValidationLog = "validation unavailable: no verified isolated sandbox"
+		return
+	}
 	if iss.Fix == nil || len(iss.Fix.Candidates) == 0 {
 		iss.Validated = false
 		iss.Demoted = true

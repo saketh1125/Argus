@@ -53,8 +53,9 @@ type passSandbox struct{}
 func (passSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	return &services.SandboxResult{Success: true, Logs: "ok"}, nil
 }
-func (passSandbox) Name() string { return "pass-sandbox" }
-func (passSandbox) Live() bool   { return false }
+func (passSandbox) Name() string            { return "pass-sandbox" }
+func (passSandbox) Live() bool              { return true }
+func (passSandbox) IsolationVerified() bool { return true }
 
 var _ services.Sandbox = passSandbox{}
 
@@ -145,8 +146,9 @@ type failedSandbox struct{}
 func (failedSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	return &services.SandboxResult{Success: true, ExitCode: 127, Stderr: "interpreter missing"}, nil
 }
-func (failedSandbox) Name() string { return "failed" }
-func (failedSandbox) Live() bool   { return false }
+func (failedSandbox) Name() string            { return "failed" }
+func (failedSandbox) Live() bool              { return true }
+func (failedSandbox) IsolationVerified() bool { return true }
 
 func TestValidatorRejectsNonzeroExitEvenIfSuccessFlagSet(t *testing.T) {
 	dir := t.TempDir()
@@ -179,8 +181,9 @@ type unavailableTestSandbox struct{}
 func (unavailableTestSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	return nil, services.ErrSandboxUnavailable
 }
-func (unavailableTestSandbox) Name() string { return "unavailable" }
-func (unavailableTestSandbox) Live() bool   { return false }
+func (unavailableTestSandbox) Name() string            { return "unavailable" }
+func (unavailableTestSandbox) Live() bool              { return true }
+func (unavailableTestSandbox) IsolationVerified() bool { return true }
 
 func TestValidatorDemotesWhenProviderUnavailable(t *testing.T) {
 	dir := t.TempDir()
@@ -205,8 +208,9 @@ func (s mutationSandbox) Run(context.Context, services.SandboxSpec) (*services.S
 	}
 	return &services.SandboxResult{Success: true}, nil
 }
-func (mutationSandbox) Name() string { return "mutation" }
-func (mutationSandbox) Live() bool   { return false }
+func (mutationSandbox) Name() string            { return "mutation" }
+func (mutationSandbox) Live() bool              { return true }
+func (mutationSandbox) IsolationVerified() bool { return true }
 
 func TestValidatorRejectsSourceChangedDuringSandbox(t *testing.T) {
 	dir := t.TempDir()
@@ -286,8 +290,9 @@ func (s commitMutationSandbox) Run(context.Context, services.SandboxSpec) (*serv
 	validationGit(s.t, s.dir, "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "mutated during validation")
 	return &services.SandboxResult{Success: true}, nil
 }
-func (commitMutationSandbox) Name() string { return "commit-mutation" }
-func (commitMutationSandbox) Live() bool   { return false }
+func (commitMutationSandbox) Name() string            { return "commit-mutation" }
+func (commitMutationSandbox) Live() bool              { return true }
+func (commitMutationSandbox) IsolationVerified() bool { return true }
 
 func TestValidatorRejectsCommitChangedDuringSandbox(t *testing.T) {
 	dir := t.TempDir()
@@ -313,8 +318,9 @@ func (s originMutationSandbox) Run(context.Context, services.SandboxSpec) (*serv
 	validationGit(s.t, s.dir, "remote", "set-url", "origin", "https://github.com/attacker/other.git")
 	return &services.SandboxResult{Success: true}, nil
 }
-func (originMutationSandbox) Name() string { return "origin-mutation" }
-func (originMutationSandbox) Live() bool   { return false }
+func (originMutationSandbox) Name() string            { return "origin-mutation" }
+func (originMutationSandbox) Live() bool              { return true }
+func (originMutationSandbox) IsolationVerified() bool { return true }
 
 func TestValidatorRejectsOriginChangedDuringSandbox(t *testing.T) {
 	dir := t.TempDir()
@@ -367,8 +373,9 @@ func (s *countingSandbox) Run(context.Context, services.SandboxSpec) (*services.
 	s.calls++
 	return &services.SandboxResult{Success: true}, nil
 }
-func (*countingSandbox) Name() string { return "counting" }
-func (*countingSandbox) Live() bool   { return false }
+func (*countingSandbox) Name() string            { return "counting" }
+func (*countingSandbox) Live() bool              { return true }
+func (*countingSandbox) IsolationVerified() bool { return true }
 
 func TestValidatorRejectsUnreconstructablePatchBeforeSandbox(t *testing.T) {
 	dir := t.TempDir()
@@ -383,5 +390,31 @@ func TestValidatorRejectsUnreconstructablePatchBeforeSandbox(t *testing.T) {
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil || iss.Validated || !iss.Demoted || sandbox.calls != 0 {
 		t.Fatalf("unreconstructable patch accepted: %+v calls=%d err=%v", iss, sandbox.calls, err)
+	}
+}
+
+type unverifiedSuccessSandbox struct{ calls int }
+
+func (s *unverifiedSuccessSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	s.calls++
+	return &services.SandboxResult{Success: true}, nil
+}
+func (*unverifiedSuccessSandbox) Name() string            { return "unverified" }
+func (*unverifiedSuccessSandbox) Live() bool              { return true }
+func (*unverifiedSuccessSandbox) IsolationVerified() bool { return false }
+
+func TestValidatorRejectsUnverifiedSandbox(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	pinValidationIssue(t, dir, iss)
+	sandbox := &unverifiedSuccessSandbox{}
+	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil || iss.Validated || !iss.Demoted || sandbox.calls != 0 {
+		t.Fatalf("unverified sandbox accepted: %+v calls=%d err=%v", iss, sandbox.calls, err)
 	}
 }

@@ -13,5 +13,6 @@ type unavailableSandbox struct{}
 func (unavailableSandbox) Run(context.Context, SandboxSpec) (*SandboxResult, error) {
 	return nil, ErrSandboxUnavailable
 }
-func (unavailableSandbox) Name() string { return "unavailable" }
-func (unavailableSandbox) Live() bool   { return false }
+func (unavailableSandbox) Name() string            { return "unavailable" }
+func (unavailableSandbox) Live() bool              { return false }
+func (unavailableSandbox) IsolationVerified() bool { return false }

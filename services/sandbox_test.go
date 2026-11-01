@@ -18,7 +18,7 @@ func TestSandboxUnavailableCannotExecuteOrWrite(t *testing.T) {
 			Files:    map[string]string{"../../escape": "bad"},
 			Commands: [][]string{{"touch", marker + "; echo injected"}},
 		})
-		if !errors.Is(err, ErrSandboxUnavailable) || res != nil || s.Live() || s.Name() != "unavailable" {
+		if !errors.Is(err, ErrSandboxUnavailable) || res != nil || s.Live() || s.IsolationVerified() || s.Name() != "unavailable" {
 			t.Fatalf("expected unavailable sandbox, got %v %v %s", res, err, s.Name())
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {

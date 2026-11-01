@@ -271,3 +271,69 @@ func TestDockerPythonSyntaxProbe(t *testing.T) {
 		t.Fatalf("probe deadline: %v", ctx.Err())
 	}
 }
+
+func TestDockerPrototypePythonChecks(t *testing.T) {
+	image := os.Getenv("ARGUS_DOCKER_PYTHON_IMAGE")
+	if !strings.HasPrefix(image, "sha256:") || len(image) != len("sha256:")+64 {
+		t.Skip("set ARGUS_DOCKER_PYTHON_IMAGE to a trusted local image ID")
+	}
+	s, err := newDockerSandbox(image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Live() || s.IsolationVerified() {
+		t.Fatal("unverified prototype reported live or verified")
+	}
+	for _, tc := range []struct {
+		name, file, code string
+		success          bool
+	}{
+		{"valid", "nested/f.py", "def f():\n    return 1\n", true},
+		{"invalid", "nested/f.py", "def f(:\n", false},
+		{"metacharacter filename", "nested/f.py;echo injected", "raise RuntimeError('not executed')\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{tc.file: tc.code}, Commands: [][]string{{"python3", "-m", "py_compile", tc.file}}, TimeoutSec: 20})
+			if err != nil || res == nil || res.Success != tc.success || (tc.success && res.ExitCode != 0) || (!tc.success && res.ExitCode == 0) {
+				t.Fatalf("unexpected syntax result: %+v %v", res, err)
+			}
+			if tc.success && res.Stdout != "" {
+				t.Fatalf("unexpected execution output: %q", res.Stdout)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if res, err := s.Run(ctx, SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 20}); err == nil || res != nil {
+		t.Fatal("cancelled run reported success")
+	}
+}
+
+func TestDockerPrototypeUnavailableImage(t *testing.T) {
+	if os.Getenv("ARGUS_DOCKER_PYTHON_IMAGE") == "" {
+		t.Skip("explicit Docker probe opt-in required")
+	}
+	s, err := newDockerSandbox("sha256:" + strings.Repeat("0", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 10})
+	if err == nil || res != nil || !strings.Contains(err.Error(), "docker prototype: create") || strings.Contains(err.Error(), "cleanup") {
+		t.Fatalf("unexpected missing image/cleanup result: %+v %v", res, err)
+	}
+}
+
+func TestDockerPrototypeMissingInterpreter(t *testing.T) {
+	image := os.Getenv("ARGUS_DOCKER_TEST_IMAGE")
+	if !strings.HasPrefix(image, "sha256:") || len(image) != len("sha256:")+64 {
+		t.Skip("set ARGUS_DOCKER_TEST_IMAGE to a trusted local image without Python")
+	}
+	s, err := newDockerSandbox(image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Run(context.Background(), SandboxSpec{Language: "python", Files: map[string]string{"f.py": "x = 1\n"}, Commands: [][]string{{"python3", "-m", "py_compile", "f.py"}}, TimeoutSec: 15})
+	if err == nil || res != nil || !strings.Contains(err.Error(), "execution unavailable") || strings.Contains(err.Error(), "cleanup") {
+		t.Fatalf("unexpected missing interpreter/cleanup result: %+v %v", res, err)
+	}
+}
