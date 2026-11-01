@@ -136,13 +136,14 @@ func isLocalDir(path string) bool {
 // for cloning. It is selected only when a token is configured and mock mode is
 // off.
 type githubREST struct {
-	token string
-	http  *http.Client
+	token   string
+	http    *http.Client
+	baseURL string
 }
 
 // newGitHubREST builds a real client bound to the given token.
 func newGitHubREST(token string) *githubREST {
-	return &githubREST{token: token, http: &http.Client{}}
+	return &githubREST{token: token, http: &http.Client{Timeout: 30 * time.Second}, baseURL: apiBase}
 }
 
 func (g *githubREST) Name() string { return "github" }
@@ -181,15 +182,16 @@ func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error
 // (which may be nil to discard the body). It retries on 500/502/503/504 with
 // exponential backoff (1s, 2s, 4s), for up to 4 total attempts.
 func (g *githubREST) do(ctx context.Context, method, url string, body any, out any) error {
-	// Marshal the body once so it can be rewound on each retry attempt.
-	var buf []byte
-	if body != nil {
-		var err error
-		buf, err = json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("request: marshal body: %w", err)
-		}
+	if method != http.MethodGet || body != nil {
+		return fmt.Errorf("github write unavailable")
 	}
+	if g.http == nil {
+		return fmt.Errorf("request: HTTP client unavailable")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	client := *g.http
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 	delays := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
 	var lastErr error
@@ -197,36 +199,32 @@ func (g *githubREST) do(ctx context.Context, method, url string, body any, out a
 	for attempt := 0; attempt < 4; attempt++ {
 		// Sleep with context-cancellation check before each retry.
 		if attempt > 0 {
+			timer := time.NewTimer(delays[attempt-1])
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			default:
+			case <-timer.C:
 			}
-			time.Sleep(delays[attempt-1])
 		}
 
-		// Build the request body reader, rewound for this attempt.
-		var rdr io.Reader
-		if buf != nil {
-			rdr = bytes.NewReader(buf)
-		}
-
-		req, err := http.NewRequestWithContext(ctx, method, url, rdr)
+		req, err := http.NewRequestWithContext(ctx, method, url, nil)
 		if err != nil {
-			return fmt.Errorf("request: build %s %s: %w", method, url, err)
+			return fmt.Errorf("request: build %s: %w", method, err)
 		}
+
 		req.Header.Set("Authorization", "Bearer "+g.token)
 		req.Header.Set("Accept", "application/vnd.github+json")
-		if body != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
 
-		resp, err := g.http.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("request: %s %s: %w", method, url, err)
 		}
-		data, _ := io.ReadAll(resp.Body)
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 		resp.Body.Close()
+		if readErr != nil || len(data) > 1<<20 {
+			return fmt.Errorf("request: response unavailable or too large")
+		}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			if out != nil && len(data) > 0 {
@@ -242,17 +240,17 @@ func (g *githubREST) do(ctx context.Context, method, url string, body any, out a
 		case http.StatusUnauthorized: // 401
 			return fmt.Errorf("github: unauthorized: check GITHUB_TOKEN")
 		case http.StatusUnprocessableEntity: // 422
-			return fmt.Errorf("request: %s %s: status %d: %s", method, url, resp.StatusCode, strings.TrimSpace(string(data)))
+			return fmt.Errorf("request: %s status %d", method, resp.StatusCode)
 		case http.StatusInternalServerError, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout: // 500/502/503/504
-			lastErr = fmt.Errorf("request: %s %s: status %d: %s", method, url, resp.StatusCode, strings.TrimSpace(string(data)))
+			lastErr = fmt.Errorf("request: %s status %d", method, resp.StatusCode)
 			// Retry if we have attempts remaining.
 			if attempt < 3 {
 				continue
 			}
 			return lastErr
 		default:
-			return fmt.Errorf("request: %s %s: status %d: %s", method, url, resp.StatusCode, strings.TrimSpace(string(data)))
+			return fmt.Errorf("request: %s status %d", method, resp.StatusCode)
 		}
 	}
 
