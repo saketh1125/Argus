@@ -216,3 +216,58 @@ func TestDockerBoundaryProbes(t *testing.T) {
 		}
 	})
 }
+
+// TestDockerPythonSyntaxProbe tests controlled fixture code only. This does not
+// enable an ARGUS provider or certify the image as safe for untrusted code.
+func TestDockerPythonSyntaxProbe(t *testing.T) {
+	image := os.Getenv("ARGUS_DOCKER_PYTHON_IMAGE")
+	if !strings.HasPrefix(image, "sha256:") || len(image) != len("sha256:")+64 {
+		t.Skip("set ARGUS_DOCKER_PYTHON_IMAGE to a trusted local image ID")
+	}
+	docker, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("docker unavailable")
+	}
+	archive, err := sandboxArchive(map[string]string{"nested/valid.py": "def valid():\n    return 1\n", "nested/invalid.py": "def broken(:\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("argus-python-probe-%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if out, err := exec.CommandContext(ctx, docker, "rm", "-f", name).CombinedOutput(); err != nil {
+			t.Errorf("cleanup: %s %v", out, err)
+			return
+		}
+		if err := exec.CommandContext(ctx, docker, "inspect", name).Run(); err == nil {
+			t.Error("container survived cleanup")
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	create := exec.CommandContext(ctx, docker, "create", "--name", name, "--pull=never", "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=32", "--memory=64m", "--memory-swap=64m", "--cpus=0.5", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m", "--entrypoint", "sleep", image, "30")
+	if out, err := create.CombinedOutput(); err != nil {
+		t.Fatalf("create: %s %v", out, err)
+	}
+	if out, err := exec.CommandContext(ctx, docker, "start", name).CombinedOutput(); err != nil {
+		t.Fatalf("start: %s %v", out, err)
+	}
+	extract := exec.CommandContext(ctx, docker, "exec", "-i", "--user=65534:65534", name, "tar", "-xf", "-", "-C", "/tmp")
+	extract.Stdin = bytes.NewReader(archive)
+	if out, err := extract.CombinedOutput(); err != nil {
+		t.Fatalf("extract: %s %v", out, err)
+	}
+	if out, err := exec.CommandContext(ctx, docker, "exec", "--user=65534:65534", name, "python3", "-m", "py_compile", "/tmp/nested/valid.py").CombinedOutput(); err != nil {
+		t.Fatalf("valid syntax: %s %v", out, err)
+	}
+	if out, err := exec.CommandContext(ctx, docker, "exec", "--user=65534:65534", name, "python3", "-m", "py_compile", "/tmp/nested/invalid.py").CombinedOutput(); err == nil || !strings.Contains(string(out), "SyntaxError") {
+		t.Fatalf("invalid syntax accepted: %s %v", out, err)
+	}
+	if out, err := exec.CommandContext(ctx, docker, "exec", "--user=65534:65534", name, "argus_missing_interpreter").CombinedOutput(); err == nil || !strings.Contains(string(out), "argus_missing_interpreter") {
+		t.Fatalf("unexpected missing interpreter result: %s %v", out, err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("probe deadline: %v", ctx.Err())
+	}
+}
