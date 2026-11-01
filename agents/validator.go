@@ -115,6 +115,11 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 
+		fullDiff := tools.UnifiedDiff(string(original), patched, iss.File)
+		if err := tools.VerifyUnifiedDiff(ctx, filepath.ToSlash(iss.File), string(original), patched, fullDiff); err != nil {
+			lastLog = fmt.Sprintf("complete-file patch integrity failed: %v", err)
+			continue
+		}
 		spec := v.buildSpec(ctx, lang, iss.File, patched, cand.RewrittenFunction)
 		if len(spec.Commands) == 0 {
 			lastLog = "validation unavailable: unsupported language"
@@ -143,7 +148,7 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 				continue
 			}
 			cand.PatchedFile = patched
-			cand.Diff = tools.UnifiedDiff(string(original), patched, iss.File)
+			cand.Diff = fullDiff
 			if cand.Diff == "" {
 				lastLog = "empty complete-file diff"
 				continue

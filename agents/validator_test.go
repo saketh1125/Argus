@@ -360,3 +360,28 @@ func TestValidatorRejectsFindingFromDifferentRepository(t *testing.T) {
 		t.Fatalf("cross-repository finding accepted: %+v %v", iss, err)
 	}
 }
+
+type countingSandbox struct{ calls int }
+
+func (s *countingSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	s.calls++
+	return &services.SandboxResult{Success: true}, nil
+}
+func (*countingSandbox) Name() string { return "counting" }
+func (*countingSandbox) Live() bool   { return false }
+
+func TestValidatorRejectsUnreconstructablePatchBeforeSandbox(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}"
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	pinValidationIssue(t, dir, iss)
+	sandbox := &countingSandbox{}
+	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil || iss.Validated || !iss.Demoted || sandbox.calls != 0 {
+		t.Fatalf("unreconstructable patch accepted: %+v calls=%d err=%v", iss, sandbox.calls, err)
+	}
+}

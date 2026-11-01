@@ -32,6 +32,10 @@ func ApplyFunctionRewrite(fileContent, originalFunc, newFunc string) (string, er
 // a line-level longest-common-subsequence to find changed regions. Returns ""
 // when the inputs are identical.
 func UnifiedDiff(original, modified, filename string) string {
+	// The LCS implementation is quadratic; refuse inputs beyond this bound.
+	if len(original) > 1<<20 || len(modified) > 1<<20 || strings.Count(original, "\n") > 1024 || strings.Count(modified, "\n") > 1024 {
+		return ""
+	}
 	if original == modified {
 		return ""
 	}
