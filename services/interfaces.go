@@ -102,6 +102,12 @@ type VectorStore interface {
 // SandboxSpec describes a one-shot sandbox execution: write Files, then run
 // Commands in order, for at most TimeoutSec seconds.
 type SandboxSpec struct {
+	Repository   string
+	BaseCommit   string
+	TargetPath   string
+	OriginalHash string
+	ResultHash   string
+	PatchDigest  string
 	// RepositoryContext is set only when the complete pinned checkout has been
 	// staged and verified, not when only a target file is supplied.
 	RepositoryContext bool

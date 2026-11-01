@@ -107,6 +107,12 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	if got.Validated || !got.Demoted || got.Fix.Selected != nil {
 		t.Fatal("single-file staging must not be marked repository-context validated")
 	}
+	if sandbox.spec.TargetPath != "f.go" || sandbox.spec.OriginalHash != fmt.Sprintf("%x", sha256.Sum256([]byte(origFile))) || sandbox.spec.ResultHash != fmt.Sprintf("%x", sha256.Sum256([]byte(sandbox.spec.Files["f.go"]))) || sandbox.spec.PatchDigest == "" {
+		t.Fatal("sandbox spec lost byte-bound patch identity")
+	}
+	if sandbox.spec.Repository != iss.Repository || sandbox.spec.BaseCommit != iss.BaseCommit {
+		t.Fatal("sandbox spec lost pinned repository identity")
+	}
 	if sandbox.spec.Files["extra.txt"] != "tracked context\n" {
 		t.Fatal("tracked repository context missing from staged files")
 	}

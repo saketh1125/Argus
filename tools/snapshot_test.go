@@ -86,3 +86,29 @@ func TestSnapshotPinnedRepositoryRejectsSymlinksAndOversizedFiles(t *testing.T) 
 		t.Fatal("oversized blob accepted")
 	}
 }
+
+func TestSnapshotIgnoresGitReplacementObjects(t *testing.T) {
+	dir, sha := snapshotFixture(t, map[string]string{"file.go": "original\n"}, false)
+	original, err := readGit(context.Background(), dir, "rev-parse", sha+":file.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "hash-object", "-w", "--stdin")
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}
+	cmd.Stdin = strings.NewReader("replacement\n")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "replace", strings.TrimSpace(original), strings.TrimSpace(string(out)))
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git replace fixture: %s %v", out, err)
+	}
+	files, err := SnapshotPinnedRepository(context.Background(), dir, "github.com/owner/repo", sha)
+	if err != nil || files["file.go"] != "original\n" {
+		t.Fatalf("replacement object affected snapshot: %q %v", files["file.go"], err)
+	}
+}

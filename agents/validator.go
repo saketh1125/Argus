@@ -136,7 +136,11 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 		files[relFile] = patched
-		spec := v.buildSpec(lang, relFile, files)
+		spec := v.buildSpec(lang, relFile, files, cand.Repository, cand.BaseCommit)
+		spec.TargetPath = relFile
+		spec.OriginalHash = cand.BaseHash
+		spec.ResultHash = fmt.Sprintf("%x", sha256.Sum256([]byte(patched)))
+		spec.PatchDigest = fmt.Sprintf("%x", sha256.Sum256([]byte(fullDiff)))
 		if len(spec.Commands) == 0 {
 			lastLog = "validation unavailable: unsupported language"
 			continue
@@ -220,11 +224,11 @@ func (v *Validator) patchedContent(original, origFunc, rewrite string) (string, 
 // buildSpec stages the bounded committed tree and target patch. It does not set
 // RepositoryContext: the provider has not verified the revision in isolation,
 // and the only configured command is a syntax check, not a repository test.
-func (v *Validator) buildSpec(lang, relFile string, files map[string]string) services.SandboxSpec {
+func (v *Validator) buildSpec(lang, relFile string, files map[string]string, repository, commit string) services.SandboxSpec {
 	commands := agtSyntaxCmd(lang, relFile)
 	timeout := v.cfg.SandboxTimeout
 	if timeout <= 0 {
 		timeout = 60
 	}
-	return services.SandboxSpec{Language: lang, Files: files, Commands: commands, TimeoutSec: timeout}
+	return services.SandboxSpec{Repository: repository, BaseCommit: commit, Language: lang, Files: files, Commands: commands, TimeoutSec: timeout}
 }
