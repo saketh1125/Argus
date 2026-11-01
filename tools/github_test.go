@@ -77,3 +77,20 @@ func TestMockCreatePRAndIssue(t *testing.T) {
 		t.Error("expected recorded actions")
 	}
 }
+
+func TestLiveGitHubWritesFailClosed(t *testing.T) {
+	g := newGitHubREST("not-a-real-token")
+	ctx := context.Background()
+	if g.CreateBranch(ctx, "upstream", "repo", "main", "branch") == nil {
+		t.Error("branch write allowed")
+	}
+	if g.CommitFile(ctx, "upstream", "repo", CommitSpec{Content: "partial"}) == nil {
+		t.Error("file write allowed")
+	}
+	if _, _, err := g.CreatePR(ctx, "upstream", "repo", PRSpec{}); err == nil {
+		t.Error("PR write allowed")
+	}
+	if _, _, err := g.CreateIssue(ctx, "upstream", "repo", "title", "body"); err == nil {
+		t.Error("issue write allowed")
+	}
+}

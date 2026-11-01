@@ -71,33 +71,18 @@ func agtTempSchedule(n int) []float64 {
 	return out
 }
 
-// agtSyntaxCmd returns a best-effort, language-appropriate syntax-check command
-// for a single file, suitable for a sandbox SandboxSpec.Commands entry. The file
-// path is relative to the sandbox working directory. Go uses `gofmt -e` rather
-// than `go build <file>` because a single-file go build fails without module
-// context. Unknown languages fall back to a no-op success.
-func agtSyntaxCmd(lang, file string) []string {
-	q := agtShellQuote(file)
+// agtSyntaxCmd selects an explicit argv for supported syntax checks.
+func agtSyntaxCmd(lang, file string) [][]string {
 	switch lang {
 	case "python":
-		return []string{"python3 -m py_compile " + q}
-	case "javascript", "typescript":
-		return []string{"node --check " + q}
+		return [][]string{{"python3", "-m", "py_compile", file}}
+	case "javascript":
+		return [][]string{{"node", "--check", file}}
 	case "go":
-		return []string{"gofmt -e " + q}
-	case "ruby":
-		return []string{"ruby -c " + q}
-	case "php":
-		return []string{"php -l " + q}
+		return [][]string{{"gofmt", "-e", file}}
 	default:
-		// Best-effort: nothing to check, treat as a trivially-passing command.
-		return []string{"true"}
+		return nil
 	}
-}
-
-// agtShellQuote single-quotes a path for safe embedding in a shell command.
-func agtShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // agtClamp constrains f to the inclusive range [lo, hi].

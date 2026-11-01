@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -119,9 +120,15 @@ func (f *FixGenerator) candidate(ctx context.Context, idx *models.RepoIndex, iss
 		return models.FixCandidate{}, false
 	}
 
+	file, ok := idx.GetFile(iss.File)
+	if !ok || file.Content == "" {
+		return models.FixCandidate{}, false
+	}
+	baseHash := fmt.Sprintf("%x", sha256.Sum256([]byte(file.Content)))
 	diff := tools.UnifiedDiff(orig, res.RewrittenFunction, iss.File)
 	return models.FixCandidate{
 		RewrittenFunction: res.RewrittenFunction,
+		BaseHash:          baseHash,
 		Diff:              diff,
 		Confidence:        agtClamp(res.Confidence, 0, 1),
 		Temperature:       temp,

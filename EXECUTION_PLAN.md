@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | NOT STARTED | — | Establish baseline; fix host execution and incomplete patch fallback |
+| P0 — Baseline and safety | IN PROGRESS | Baseline started at c189f53de2e1e6eb6a137cb4d5c5a5c441bd4b47; see P0.1 results below | Isolation, safety fixes, adapter verification and CI outstanding |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -940,6 +940,23 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - Checks performed in preparation: read-only Git status/branch/HEAD/remotes/history/tree inspection; source, test, configuration and documentation inspection. Documentation scope verification passed: the supplied plan is unchanged outside this handoff and all eight phase statuses remain NOT STARTED. Staged whitespace checking flags only pre-existing Markdown hard-break spaces in the supplied plan; preserve those intentional spaces. New instruction/handoff text has no trailing whitespace. No Go tests, vet, race tests, builds, runtime demos, provider calls or deployments were run. No application code, tests, dependencies, runtime configuration or CI was modified. No Phase 0 task or exit gate is certified.
 - Exact next task: **P0.1 — Establish local baseline**. Inspect the current Git state and instructions first; record actual toolchain/check outcomes and mock/live behavior safely. The prohibition on untrusted host execution and LLM-controlled commands applies during baseline reproduction too. Use genuine isolation for unsafe paths; if unavailable, record that portion as blocked rather than running the unsafe fallback. Do not mistake documentation preparation for baseline execution.
 - Continue Phase 0 tasks sequentially only within the authorized implementation session. Stop and report at the Phase 0 boundary; do not begin Phase 1 until its prerequisite gate passes and continuation is authorized. Report unavailable isolation, provider failures and other unmet criteria explicitly.
+
+### P0.1 partial baseline — 2026-11-01
+
+- Starting HEAD `c189f53de2e1e6eb6a137cb4d5c5a5c441bd4b47`, branch `main`, clean tracked working tree; Go `go1.24.0 linux/amd64`, module declares Go 1.24 and no third-party requirements.
+- Checks used a `git archive` copy under `/tmp`, an empty environment with explicit tool paths and no credentials, `GOPROXY=off`, and an isolated Go cache. No pipeline or untrusted target was run. `go test ./...` and `go test -race ./...` failed: three dashboard tests cannot bind `127.0.0.1` in this sandbox (`socket: operation not permitted`); agents, services and tools passed. Live NIM test was skipped because credentials were absent. `go vet ./...` passed.
+- `go build ./...` failed in the archive because Git metadata was unavailable for VCS stamping; `go build -buildvcs=false ./...` passed. `gofmt -l .` identified `agents/pr_agent_test.go`.
+- Adapter selection is statically inspected but has not been reproduced at runtime. Genuine sandbox availability and live mode remain unverified. The existing host executor and publication fallbacks remain unsafe; do not run the pipeline against untrusted inputs. Phase 0 exit gate remains unmet.
+
+### P0 continuation — 2026-11-01
+
+- Baseline rerun in credential-free local Git clone of `c189f53de2e1e6eb6a137cb4d5c5a5c441bd4b47`: build and vet passed. Dashboard tests failed under restricted execution with `socket: operation not permitted`; the unchanged tests passed with loopback access outside that restriction. Fixed pre-existing formatting in `agents/pr_agent_test.go`.
+- Replaced local shell and unverified E2B execution with an unavailable sandbox for every mode. Added adversarial regression checking no execution or file writes. Validator uses deterministic language-specific argv, discards generated test commands, and refuses unsupported languages. No provider is asserted isolated; E2B implementation and live validation remain unavailable.
+- Validator rejects missing/empty source, source identity mismatch, ambiguous/missing function, empty/no-op rewrites, unsafe paths, failed exit codes and cancelled contexts. It records SHA-256 hashes of the indexed base and patched file. Source is sanitized before indexing, so hash mismatch can conservatively reject a valid patch; this is fail closed. Commit-SHA binding is not yet implemented. Added tests for ambiguous/missing/no-op patches, stale source, nonzero interpreter exit, argv and unavailable sandbox.
+- Disabled all live GitHub branch, commit, PR and issue writes and the PR agent publication path until fork provenance, isolated validation and patch/base-bound human approval exist. Added no-write regression tests. No fork workflow or approval mechanism is implemented; publication remains unavailable.
+- Added `.github/workflows/ci.yml` for formatting, vet, build, unit and race checks. Hosted CI has not run. The dashboard reports the count actually validated rather than attempts, and the CLI displays `sandbox=unavailable`.
+- Final credential-free Git checkout checks with loopback access: `go test -count=1 ./...`, `go test -race -count=1 ./...`, `go vet ./...`, `go build ./...` all passed; `gofmt -l .` returned no files. Live NIM was skipped without credentials. `go run . --mock --no-dashboard --repo ./testdata/sample-repo` completed with mock adapter labels, unavailable sandbox, zero PRs, and two demoted findings; it did not execute target code.
+- Phase 0 remains **IN PROGRESS**: no genuine isolated provider verified, commit-pinned provenance and full fork/approval workflow absent, live mode and hosted CI not verified. Do not begin Phase 1. Working changes are uncommitted; inspect Git state on resumption.
 
 ### Current next action
 

@@ -104,7 +104,7 @@ type VectorStore interface {
 type SandboxSpec struct {
 	Language   string
 	Files      map[string]string // relative path -> content
-	Commands   []string          // executed in order; first failure stops
+	Commands   [][]string        // argv arrays, executed in order; first failure stops
 	TimeoutSec int
 }
 

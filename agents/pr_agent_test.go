@@ -45,65 +45,13 @@ func (c *captureGitHub) Live() bool   { return false }
 
 var _ tools.GitHubClient = (*captureGitHub)(nil)
 
-// TestPRAgentCommitsFullPatchedFile is the regression test for the destructive
-// overwrite bug: when the validator captured a full patched file, the PR agent
-// MUST commit that (a single-function edit) and never just the rewritten
-// function (which would replace the whole file via the GitHub Contents API).
-func TestPRAgentCommitsFullPatchedFile(t *testing.T) {
+func TestPRAgentBlocksAllPublication(t *testing.T) {
 	gh := &captureGitHub{}
 	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
-
-	fullFile := "package main\n\nfunc f() int { return 2 }\nfunc g() {}\n"
-	rewrite := "func f() int { return 2 }\n"
-	iss := &models.Issue{
-		File: "f.go", FunctionName: "f", LineStart: 3, LineEnd: 3,
-		BugType: models.BugLogic, Severity: models.SeverityCritical, Confidence: 0.95,
-		Evidence: "return 1", Explanation: "wrong return value",
-		Fix: &models.Fix{
-			OriginalFunction: "func f() int { return 1 }",
-			Selected: &models.FixCandidate{
-				RewrittenFunction: rewrite,
-				PatchedFile:       fullFile,
-				Diff:              "--- a/f.go\n+++ b/f.go\n",
-			},
-		},
-		Validated: true,
-	}
-
-	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(gh.commits) != 1 {
-		t.Fatalf("expected 1 commit, got %d", len(gh.commits))
-	}
-	if gh.commits[0].Content != fullFile {
-		t.Errorf("PR agent must commit the full patched file, got %q", gh.commits[0].Content)
-	}
-	if gh.commits[0].Content == rewrite {
-		t.Error("PR agent committed only the rewritten function — this overwrites the whole file in live mode")
-	}
-}
-
-// TestPRAgentFallsBackToRewriteWhenNoPatchedFile covers the isolated-validation
-// path: when the validator had no on-disk file to patch, PatchedFile is empty
-// and the PR agent falls back to the rewritten function.
-func TestPRAgentFallsBackToRewriteWhenNoPatchedFile(t *testing.T) {
-	gh := &captureGitHub{}
-	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
-
-	rewrite := "func f() int { return 2 }\n"
-	iss := &models.Issue{
-		File: "f.go", LineStart: 3,
-		BugType: models.BugLogic, Severity: models.SeverityCritical, Confidence: 0.95,
-		Evidence: "x", Explanation: "y",
-		Fix:      &models.Fix{Selected: &models.FixCandidate{RewrittenFunction: rewrite, Diff: "d"}},
-		Validated: true,
-	}
-	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(gh.commits) != 1 || gh.commits[0].Content != rewrite {
-		t.Fatalf("fallback should commit rewrite, got %q", gh.commits[0].Content)
+	issues := []*models.Issue{{Validated: true, Fix: &models.Fix{Selected: &models.FixCandidate{PatchedFile: "full file"}}}, {Validated: true, Fix: &models.Fix{Selected: &models.FixCandidate{RewrittenFunction: "partial"}}}}
+	report, err := pr.Run(context.Background(), "o", "r", "main", issues, issues)
+	if err != nil || len(gh.commits) != 0 || len(gh.prSpecs) != 0 || gh.issues != 0 || len(report.PRsRaised) != 0 {
+		t.Fatalf("publication must be blocked: report=%+v err=%v github=%+v", report, err, gh)
 	}
 }
 
@@ -134,13 +82,7 @@ func TestPRBodyIncludesCallGraphContext(t *testing.T) {
 		}},
 		Validated: true,
 	}
-	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(gh.prSpecs) != 1 {
-		t.Fatalf("expected 1 PR, got %d", len(gh.prSpecs))
-	}
-	body := gh.prSpecs[0].Body
+	body := pr.prBody(iss, "d")
 	for _, want := range []string{"Call Graph Context", "Helper", "Boss"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("PR body missing %q\n--- body ---\n%s", want, body)

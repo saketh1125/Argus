@@ -128,8 +128,10 @@ type FixCandidate struct {
 	// by the validator at validation time. It is what the PR agent commits so a
 	// PR edits only the target function rather than replacing the whole file.
 	// Empty when the candidate was never validated (e.g. the file could not be
-	// read from disk); callers then fall back to RewrittenFunction.
+	// read from disk); no function-only fallback is allowed.
 	PatchedFile string `json:"patched_file,omitempty"`
+	BaseHash    string `json:"base_hash,omitempty"`
+	ResultHash  string `json:"result_hash,omitempty"`
 }
 
 // Fix bundles the candidate rewrites for an issue and records which one was

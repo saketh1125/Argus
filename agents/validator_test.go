@@ -2,6 +2,8 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,7 +47,7 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 		Fix: &models.Fix{
 			OriginalFunction: origFunc,
 			Candidates: []models.FixCandidate{
-				{RewrittenFunction: rewrite, Diff: "d", Confidence: 0.9, Temperature: 0.2},
+				{RewrittenFunction: rewrite, Diff: "d", Confidence: 0.9, Temperature: 0.2, BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(origFile)))},
 			},
 		},
 	}
@@ -74,5 +76,62 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	}
 	if !strings.Contains(got.Fix.Selected.PatchedFile, "func g()") {
 		t.Errorf("patched file must preserve sibling code (func g); got %q", got.Fix.Selected.PatchedFile)
+	}
+}
+
+func TestPatchedContentFailsClosed(t *testing.T) {
+	v := &Validator{}
+	for _, tc := range []struct{ source, original, rewrite string }{
+		{"", "old", "new"}, {"file old", "missing", "new"}, {"old old", "old", "new"}, {"old", "old", ""}, {"old", "old", "old"},
+	} {
+		if _, err := v.patchedContent(tc.source, tc.original, tc.rewrite); err == nil {
+			t.Errorf("accepted invalid rewrite: %+v", tc)
+		}
+	}
+}
+
+func TestValidatorRejectsChangedSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte("package p\nfunc f() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: "stale"}}}}
+	v := NewValidator(passSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, _ = v.Run(context.Background(), dir, []*models.Issue{iss})
+	if iss.Validated || !iss.Demoted {
+		t.Fatalf("stale patch accepted: %+v", iss)
+	}
+}
+
+type failedSandbox struct{}
+
+func (failedSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	return &services.SandboxResult{Success: true, ExitCode: 127, Stderr: "interpreter missing"}, nil
+}
+func (failedSandbox) Name() string { return "failed" }
+func (failedSandbox) Live() bool   { return false }
+
+func TestValidatorRejectsNonzeroExitEvenIfSuccessFlagSet(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	v := NewValidator(failedSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, _ = v.Run(context.Background(), dir, []*models.Issue{iss})
+	if iss.Validated || !iss.Demoted {
+		t.Fatalf("failed command accepted: %+v", iss)
+	}
+}
+
+func TestSyntaxCommandsUseArgvAndRejectUnsupportedLanguage(t *testing.T) {
+	path := "file; touch marker.py"
+	cmds := agtSyntaxCmd("python", path)
+	if len(cmds) != 1 || len(cmds[0]) != 4 || cmds[0][3] != path {
+		t.Fatalf("unexpected argv: %#v", cmds)
+	}
+	if len(agtSyntaxCmd("unsupported", path)) != 0 {
+		t.Fatal("unsupported language must not pass")
 	}
 }

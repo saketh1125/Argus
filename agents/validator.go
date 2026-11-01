@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,10 +38,14 @@ func NewValidator(sandbox services.Sandbox, llm services.LLMClient, parser tools
 func (v *Validator) Run(ctx context.Context, workdir string, issues []*models.Issue) ([]*models.Issue, error) {
 	v.rep.SetStage(models.StageValidate, 0)
 	total := len(issues)
+	validatedCount := 0
 	for i, iss := range issues {
 		v.rep.SetAgentStatus("Validator", "validating "+iss.File)
 		v.validate(ctx, workdir, iss)
-		v.rep.SetValidated(i+1, total)
+		if iss.Validated {
+			validatedCount++
+		}
+		v.rep.SetValidated(validatedCount, total)
 		if total > 0 {
 			v.rep.SetStage(models.StageValidate, (i+1)*100/total)
 		}
@@ -60,13 +65,22 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 	}
 
 	lang := v.parser.Language(filepath.Ext(iss.File))
-	absPath := filepath.Join(workdir, iss.File)
-	original, rerr := os.ReadFile(absPath)
-	if rerr != nil {
-		// Without on-disk content we can only validate the rewritten function in
-		// isolation. Fall back to using the rewrite as the file content.
-		v.rep.Log("validator: read %s: %v", iss.File, rerr)
-		original = nil
+	root, rootErr := filepath.EvalSymlinks(workdir)
+	absPath := filepath.Join(root, iss.File)
+	resolved, pathErr := filepath.EvalSymlinks(absPath)
+	rel, relErr := filepath.Rel(root, resolved)
+	if rootErr != nil || pathErr != nil || relErr != nil || filepath.IsAbs(iss.File) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = "validation unavailable: invalid source path"
+		return
+	}
+	original, rerr := os.ReadFile(resolved)
+	if rerr != nil || len(original) == 0 {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = "validation unavailable: source file missing or empty"
+		return
 	}
 
 	// Try the top candidate, then the next-ranked one on failure (one retry).
@@ -79,6 +93,10 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 	var lastLog string
 	for attempt := 0; attempt < maxTry; attempt++ {
 		cand := cands[attempt]
+		if cand.BaseHash == "" || cand.BaseHash != fmt.Sprintf("%x", sha256.Sum256(original)) {
+			lastLog = "base file identity mismatch"
+			continue
+		}
 		patched, perr := v.patchedContent(string(original), iss.Fix.OriginalFunction, cand.RewrittenFunction)
 		if perr != nil {
 			lastLog = fmt.Sprintf("attempt %d: apply failed: %v", attempt+1, perr)
@@ -86,15 +104,20 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 		}
 
 		spec := v.buildSpec(ctx, lang, iss.File, patched, cand.RewrittenFunction)
+		if len(spec.Commands) == 0 {
+			lastLog = "validation unavailable: unsupported language"
+			continue
+		}
 		res, serr := v.sandbox.Run(ctx, spec)
 		if serr != nil {
 			lastLog = fmt.Sprintf("attempt %d: sandbox error: %v", attempt+1, serr)
 			continue
 		}
-		if res != nil && res.Success {
+		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil {
 			// Carry the validated full-file content forward so the PR agent can
 			// commit a single-function edit instead of replacing the whole file.
 			cand.PatchedFile = patched
+			cand.ResultHash = fmt.Sprintf("%x", sha256.Sum256([]byte(patched)))
 			selected := cand
 			iss.Fix.Selected = &selected
 			iss.Validated = true
@@ -121,14 +144,15 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 // content is available it applies the function rewrite in place; otherwise it
 // validates the rewritten function alone.
 func (v *Validator) patchedContent(original, origFunc, rewrite string) (string, error) {
-	if original == "" || origFunc == "" {
-		return rewrite, nil
+	if original == "" || origFunc == "" || strings.TrimSpace(rewrite) == "" {
+		return "", fmt.Errorf("missing full source or rewrite")
 	}
 	patched, err := tools.ApplyFunctionRewrite(original, origFunc, rewrite)
 	if err != nil {
-		// The original function text wasn't found verbatim (e.g. sanitization
-		// drift). Fall back to validating the rewrite in isolation.
-		return rewrite, nil
+		return "", err
+	}
+	if patched == original {
+		return "", fmt.Errorf("empty patch")
 	}
 	return patched, nil
 }
@@ -138,14 +162,6 @@ func (v *Validator) patchedContent(original, origFunc, rewrite string) (string, 
 func (v *Validator) buildSpec(ctx context.Context, lang, relFile, patched, rewrite string) services.SandboxSpec {
 	files := map[string]string{relFile: patched}
 	commands := agtSyntaxCmd(lang, relFile)
-
-	// If there are no obvious tests, try to generate a minimal one.
-	if test, ok := v.maybeGenTest(ctx, lang, relFile, rewrite); ok {
-		files[test.Filename] = test.TestCode
-		if test.RunCmd != "" {
-			commands = append(commands, test.RunCmd)
-		}
-	}
 
 	timeout := v.cfg.SandboxTimeout
 	if timeout <= 0 {
@@ -157,30 +173,4 @@ func (v *Validator) buildSpec(ctx context.Context, lang, relFile, patched, rewri
 		Commands:   commands,
 		TimeoutSec: timeout,
 	}
-}
-
-// maybeGenTest asks the LLM (Task=testgen) for a minimal test for the rewritten
-// function. Any failure simply yields ok=false (tests are optional).
-func (v *Validator) maybeGenTest(ctx context.Context, lang, relFile, rewrite string) (models.TestGenResult, bool) {
-	user := fmt.Sprintf("Write one minimal %s test that imports/exercises this function so a syntax+smoke check passes.\nFile: %s\nFunction:\n%s",
-		lang, relFile, rewrite)
-	req := services.CompletionRequest{
-		System: "You generate a single minimal test. Return ONLY JSON matching " +
-			"{\"filename\":string,\"test_code\":string,\"run_cmd\":string}.",
-		User:      user,
-		Task:      models.TaskTestGen,
-		JSONMode:  true,
-		MaxTokens: 1024,
-	}
-	resp, err := v.llm.Complete(ctx, req)
-	if err != nil || resp == nil {
-		v.rep.Log("testgen: LLM FAILED: %v", err)
-		return models.TestGenResult{}, false
-	}
-	var res models.TestGenResult
-	if err := agtParseJSON(resp.Text, &res); err != nil || res.Filename == "" || res.TestCode == "" {
-		v.rep.Log("testgen: JSON parse FAILED: %v", err)
-		return models.TestGenResult{}, false
-	}
-	return res, true
 }

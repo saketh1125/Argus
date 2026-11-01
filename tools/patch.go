@@ -14,8 +14,11 @@ import (
 // error if originalFunc is not found verbatim.
 func ApplyFunctionRewrite(fileContent, originalFunc, newFunc string) (string, error) {
 	originalFunc = strings.TrimRight(originalFunc, "\n")
-	if originalFunc == "" {
+	if originalFunc == "" || strings.TrimSpace(newFunc) == "" {
 		return "", fmt.Errorf("apply: empty original function")
+	}
+	if strings.Count(fileContent, originalFunc) != 1 {
+		return "", fmt.Errorf("apply: original function missing or ambiguous")
 	}
 	idx := strings.Index(fileContent, originalFunc)
 	if idx < 0 {

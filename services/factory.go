@@ -81,12 +81,9 @@ func selectVectors(ctx context.Context, cfg *config.Config) VectorStore {
 	return newMockVectors()
 }
 
-// selectSandbox picks E2B only when a key is present, else the local executor.
-func selectSandbox(cfg *config.Config) Sandbox {
-	if cfg.ForceMock || cfg.E2BAPIKey == "" {
-		return newLocalSandbox()
-	}
-	return newE2BSandbox(cfg.E2BAPIKey)
+// selectSandbox fails closed until an isolation provider is independently verified.
+func selectSandbox(_ *config.Config) Sandbox {
+	return unavailableSandbox{}
 }
 
 // computeMode reduces the per-adapter Live() flags to a single Mode string:

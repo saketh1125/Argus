@@ -7,7 +7,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -234,83 +233,18 @@ func (g *githubREST) DefaultBranch(ctx context.Context, owner, repo string) (str
 	return out.DefaultBranch, nil
 }
 
-func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name string) error {
-	// Resolve the base branch's tip SHA. The ref response nests it under
-	// .object.sha.
-	var ref struct {
-		Object struct {
-			SHA string `json:"sha"`
-		} `json:"object"`
-	}
-	refURL := fmt.Sprintf("%s/repos/%s/%s/git/ref/heads/%s", apiBase, owner, repo, base)
-	if err := g.do(ctx, http.MethodGet, refURL, nil, &ref); err != nil {
-		return fmt.Errorf("create branch: resolve base %q: %w", base, err)
-	}
-	body := map[string]string{
-		"ref": "refs/heads/" + name,
-		"sha": ref.Object.SHA,
-	}
-	postURL := fmt.Sprintf("%s/repos/%s/%s/git/refs", apiBase, owner, repo)
-	if err := g.do(ctx, http.MethodPost, postURL, body, nil); err != nil {
-		return fmt.Errorf("create branch %q: %w", name, err)
-	}
-	return nil
+// Live writes are disabled until verified fork and patch-bound approval exist.
+func (g *githubREST) CreateBranch(context.Context, string, string, string, string) error {
+	return fmt.Errorf("github publication unavailable")
 }
-
-func (g *githubREST) CommitFile(ctx context.Context, owner, repo string, spec CommitSpec) error {
-	contentsURL := fmt.Sprintf("%s/repos/%s/%s/contents/%s", apiBase, owner, repo, spec.Path)
-
-	// Look up the existing blob SHA (required by the API to update a file).
-	var existing struct {
-		SHA string `json:"sha"`
-	}
-	getURL := contentsURL + "?ref=" + spec.Branch
-	// A 404 here simply means the file is new; ignore the error in that case.
-	_ = g.do(ctx, http.MethodGet, getURL, nil, &existing)
-
-	body := map[string]any{
-		"message": spec.Message,
-		"content": base64.StdEncoding.EncodeToString([]byte(spec.Content)),
-		"branch":  spec.Branch,
-	}
-	if existing.SHA != "" {
-		body["sha"] = existing.SHA
-	}
-	if err := g.do(ctx, http.MethodPut, contentsURL, body, nil); err != nil {
-		return fmt.Errorf("commit file %q: %w", spec.Path, err)
-	}
-	return nil
+func (g *githubREST) CommitFile(context.Context, string, string, CommitSpec) error {
+	return fmt.Errorf("github publication unavailable")
 }
-
-func (g *githubREST) CreatePR(ctx context.Context, owner, repo string, spec PRSpec) (int, string, error) {
-	body := map[string]string{
-		"title": spec.Title,
-		"head":  spec.Head,
-		"base":  spec.Base,
-		"body":  spec.Body,
-	}
-	var out struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-	}
-	url := fmt.Sprintf("%s/repos/%s/%s/pulls", apiBase, owner, repo)
-	if err := g.do(ctx, http.MethodPost, url, body, &out); err != nil {
-		return 0, "", fmt.Errorf("create pr: %w", err)
-	}
-	return out.Number, out.HTMLURL, nil
+func (g *githubREST) CreatePR(context.Context, string, string, PRSpec) (int, string, error) {
+	return 0, "", fmt.Errorf("github publication unavailable")
 }
-
-func (g *githubREST) CreateIssue(ctx context.Context, owner, repo, title, body string) (int, string, error) {
-	payload := map[string]string{"title": title, "body": body}
-	var out struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-	}
-	url := fmt.Sprintf("%s/repos/%s/%s/issues", apiBase, owner, repo)
-	if err := g.do(ctx, http.MethodPost, url, payload, &out); err != nil {
-		return 0, "", fmt.Errorf("create issue: %w", err)
-	}
-	return out.Number, out.HTMLURL, nil
+func (g *githubREST) CreateIssue(context.Context, string, string, string, string) (int, string, error) {
+	return 0, "", fmt.Errorf("github publication unavailable")
 }
 
 // ---------------------------------------------------------------------------

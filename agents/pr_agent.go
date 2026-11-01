@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
@@ -34,145 +33,19 @@ func NewPRAgent(gh tools.GitHubClient, cfg *config.Config, rep models.Reporter, 
 	return &PRAgent{gh: gh, cfg: cfg, rep: rep, dedup: dedup, idx: idx}
 }
 
-// Run raises PRs for validated fixes and a single summary issue for the rest,
-// returning a populated RunReport. The validated slice may contain demoted issues
-// (validator demotes in place); those are routed to the summary, not to PRs.
-func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated []*models.Issue, summary []*models.Issue) (*models.RunReport, error) {
-	p.rep.SetStage(models.StagePR, 0)
-	if base == "" {
-		base = "main"
-	}
-
-	report := &models.RunReport{}
-
-	// Split validated input into true PR candidates and demoted ones.
-	var prCandidates []*models.Issue
-	var demoted []*models.Issue
-	for _, iss := range validated {
-		if iss == nil {
-			continue
-		}
-		if iss.Validated && !iss.Demoted {
-			prCandidates = append(prCandidates, iss)
-		} else {
-			demoted = append(demoted, iss)
-		}
-	}
-	report.DemotedIssues = demoted
-	report.IssuesFound = len(validated) + len(summary)
-
-	// Raise one PR per validated issue.
-	for i, iss := range prCandidates {
-		// Cross-run deduplication: skip if a PR was already raised for this
-		// finding in a previous run.
-		if p.dedup != nil && p.dedup.Has(iss.DedupKey()) {
-			p.rep.Log("pragent: skipping %s (already raised in prior run)", iss.DedupKey())
-			continue
-		}
-		p.rep.SetAgentStatus("PRAgent", "raising PR for "+iss.File)
-		pr, err := p.raisePR(ctx, owner, repo, base, iss)
-		if err != nil {
-			p.rep.Log("pragent: PR for %s failed: %v", iss.File, err)
-			// Demote on failure so it still surfaces in the summary.
-			iss.Demoted = true
-			report.DemotedIssues = append(report.DemotedIssues, iss)
-			continue
-		}
-		// Record the dedup key so future runs skip this finding.
-		if p.dedup != nil {
-			p.dedup.Record(iss.DedupKey())
-		}
-		report.PRsRaised = append(report.PRsRaised, pr)
-		p.rep.SetPRsRaised(len(report.PRsRaised))
-		if len(prCandidates) > 0 {
-			p.rep.SetStage(models.StagePR, (i+1)*80/len(prCandidates))
-		}
-	}
-
-	// Compile the single summary issue from summary + demoted findings.
-	summaryRows := append([]*models.Issue{}, summary...)
-	summaryRows = append(summaryRows, report.DemotedIssues...)
-	if len(summaryRows) > 0 {
-		title := fmt.Sprintf("[CodeSentinel] Analysis Summary — %d findings", len(summaryRows))
-		body := p.summaryBody(summaryRows)
-		if _, url, err := p.gh.CreateIssue(ctx, owner, repo, title, body); err != nil {
-			p.rep.Log("pragent: summary issue failed: %v", err)
-		} else {
-			report.SummaryIssue = url
-		}
-	}
-
-	p.rep.SetStage(models.StagePR, 100)
-	p.rep.Log("pragent: raised %d PRs, %d demoted", len(report.PRsRaised), len(report.DemotedIssues))
-	return report, nil
+// Run refuses publication until fork ownership, validation and patch-bound approval are implemented.
+func (p *PRAgent) Run(_ context.Context, _, _, _ string, validated []*models.Issue, summary []*models.Issue) (*models.RunReport, error) {
+	p.rep.Log("publication unavailable: verified fork and patch-bound approval are required")
+	return &models.RunReport{IssuesFound: len(validated) + len(summary), DemotedIssues: validated}, nil
 }
 
-// raisePR creates the branch, commits the rewritten function, and opens the PR.
-// If the branch already exists (422 from GitHub), a timestamp suffix is appended
-// and the creation is retried once — preventing collision on re-runs.
-func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base string, iss *models.Issue) (models.PRResult, error) {
-	branch := fmt.Sprintf("codesentinel/fix-%s-%s-%d",
-		agtSanitizeForBranch(iss.BugType),
-		agtSanitizeForBranch(agtBaseName(iss.File)),
-		iss.LineStart)
-
-	if err := p.gh.CreateBranch(ctx, owner, repo, base, branch); err != nil {
-		if strings.Contains(err.Error(), "422") || strings.Contains(err.Error(), "already exists") {
-			// Append a Unix-second suffix and retry once.
-			branch = fmt.Sprintf("%s-%d", branch, time.Now().Unix())
-			if retryErr := p.gh.CreateBranch(ctx, owner, repo, base, branch); retryErr != nil {
-				return models.PRResult{}, fmt.Errorf("create branch (retry): %w", retryErr)
-			}
-		} else {
-			return models.PRResult{}, fmt.Errorf("create branch: %w", err)
-		}
-	}
-
-	// Commit the validated, full patched file content so the PR edits only the
-	// target function. We fall back to the rewritten function only when the
-	// validator had no on-disk file to patch (rare; isolated-validation path).
-	content := ""
-	diff := ""
-	if iss.Fix != nil && iss.Fix.Selected != nil {
-		diff = iss.Fix.Selected.Diff
-		if iss.Fix.Selected.PatchedFile != "" {
-			content = iss.Fix.Selected.PatchedFile
-		} else {
-			content = iss.Fix.Selected.RewrittenFunction
-		}
-	}
-
-	commitMsg := fmt.Sprintf("[CodeSentinel] Fix %s %s in %s:%d", iss.Severity, iss.BugType, iss.File, iss.LineStart)
-	if err := p.gh.CommitFile(ctx, owner, repo, tools.CommitSpec{
-		Branch:  branch,
-		Path:    iss.File,
-		Content: content,
-		Message: commitMsg,
-	}); err != nil {
-		return models.PRResult{}, fmt.Errorf("commit: %w", err)
-	}
-
-	title := fmt.Sprintf("[CodeSentinel] Fix %s %s in %s", iss.Severity, iss.BugType, iss.File)
-	number, url, err := p.gh.CreatePR(ctx, owner, repo, tools.PRSpec{
-		Title: title,
-		Body:  p.prBody(iss, diff),
-		Head:  branch,
-		Base:  base,
-	})
-	if err != nil {
-		return models.PRResult{}, fmt.Errorf("create PR: %w", err)
-	}
-	return models.PRResult{Number: number, URL: url, Branch: branch, Issue: iss}, nil
-}
-
-// prBody renders the design §4.7 PR body template for an issue and its diff.
 func (p *PRAgent) prBody(iss *models.Issue, diff string) string {
 	var b strings.Builder
 	b.WriteString("## CodeSentinel Analysis Report\n\n")
 	fmt.Fprintf(&b, "**Type:** %s\n", iss.BugType)
 	fmt.Fprintf(&b, "**Severity:** %s\n", iss.Severity)
 	fmt.Fprintf(&b, "**Confidence:** %.0f%%\n", iss.Confidence*100)
-	b.WriteString("**Validation:** ✅ Passed E2B sandbox\n\n")
+	b.WriteString("**Validation:** See validation evidence; provider not recorded.\n\n")
 	b.WriteString("### Evidence\n")
 	fmt.Fprintf(&b, "File: `%s` | Lines: %d–%d\n\n", iss.File, iss.LineStart, iss.LineEnd)
 	for _, line := range strings.Split(strings.TrimRight(iss.Evidence, "\n"), "\n") {
