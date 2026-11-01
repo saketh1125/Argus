@@ -1021,6 +1021,11 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - The validator now clears an existing selected patch and validated state before each attempt. A regression shows an unavailable provider previously left the old selection attached; it failed before the change and passes afterward. This reduces stale patch reuse but does not implement commit-bound validation or approval; publication remains disabled.
 - Full credential-free local tests, race tests, vet, build and formatting passed with loopback access. Hosted CI for the resulting commit remains to be checked. Phase 0 remains in progress.
 
+### P0 continuation — protect live-test credentials
+
+- The live NIM integration test previously loaded `.env` and logged the API key when ordinary tests ran. It now requires `NIM_LIVE_TEST=1` before configuration is loaded and does not log the API key or endpoint. A credential-free test with a harmless sentinel credential and no opt-in skipped before any provider call, with no sentinel printed. The real provider test was not run.
+- Full credential-free local tests, race tests, vet, build and formatting passed. Hosted CI [41312812688](https://github.com/saketh1125/Argus/actions/runs/41312812688) passed for `b37fabc7d7f6d6eea014457f7ae400d746bff9f3`; [41312898305](https://github.com/saketh1125/Argus/actions/runs/41312898305) passed for `e178763dbc8642892c3cf80cba145559a1800aa6`. Hosted CI for this change has not yet been observed. Phase 0 is incomplete.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.

@@ -12,15 +12,16 @@ import (
 )
 
 // TestNIMLiveConnect performs a real NIM API call and prints the full response
-// for debugging. Run with: go test -v -run TestNIMLiveConnect ./services/
+// for debugging. Opt in explicitly with NIM_LIVE_TEST=1 and a credential.
 func TestNIMLiveConnect(t *testing.T) {
+	if os.Getenv("NIM_LIVE_TEST") != "1" {
+		t.Skip("set NIM_LIVE_TEST=1 to run live provider tests")
+	}
 	cwd, _ := os.Getwd()
 	t.Logf("CWD: %s", cwd)
 
 	cfg := config.Load()
 
-	t.Logf("NIM_API_KEY=%q (len=%d)", cfg.NIMAPIKey, len(cfg.NIMAPIKey))
-	t.Logf("NIMBaseURL=%q", cfg.NIMBaseURL)
 	t.Logf("NIMModel=%q", cfg.NIMModel)
 	t.Logf("ForceMock=%v", cfg.ForceMock)
 
@@ -28,7 +29,6 @@ func TestNIMLiveConnect(t *testing.T) {
 		t.Skip("NIM_API_KEY not set, skipping live test")
 	}
 
-	t.Logf("Base URL: %s", cfg.NIMBaseURL)
 	t.Logf("Model:    %s", cfg.NIMModel)
 
 	limiter := NewRateLimiter(cfg.MaxRPM)
