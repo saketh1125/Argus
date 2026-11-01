@@ -32,7 +32,10 @@ func pinValidationIssue(t *testing.T, dir string, iss *models.Issue) {
 	}
 	validationGit(t, dir, "init", "-q")
 	validationGit(t, dir, "remote", "add", "origin", "https://github.com/owner/repo.git")
-	validationGit(t, dir, "add", "f.go")
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("tracked context\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	validationGit(t, dir, "add", "f.go", "extra.txt")
 	validationGit(t, dir, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "fixture")
 	commit, err := tools.ResolveGitCommit(context.Background(), dir)
 	if err != nil {
@@ -103,6 +106,9 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	got := out[0]
 	if got.Validated || !got.Demoted || got.Fix.Selected != nil {
 		t.Fatal("single-file staging must not be marked repository-context validated")
+	}
+	if sandbox.spec.Files["extra.txt"] != "tracked context\n" {
+		t.Fatal("tracked repository context missing from staged files")
 	}
 	patched := sandbox.spec.Files["f.go"]
 	if !strings.Contains(patched, "return 2") || !strings.Contains(patched, "func g()") {

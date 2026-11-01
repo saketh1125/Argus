@@ -14,20 +14,30 @@ import (
 
 var gitCommitSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-type limitedGitOutput struct{ bytes.Buffer }
+type limitedGitOutput struct {
+	bytes.Buffer
+	limit int
+}
 
 func (b *limitedGitOutput) Write(p []byte) (int, error) {
-	if b.Len()+len(p) > 8192 {
+	if b.Len()+len(p) > b.limit {
 		return 0, fmt.Errorf("git output exceeds limit")
 	}
 	return b.Buffer.Write(p)
 }
 
 func readGit(ctx context.Context, workdir string, args ...string) (string, error) {
+	return readGitBounded(ctx, workdir, 8192, "", args...)
+}
+
+func readGitBounded(ctx context.Context, workdir string, limit int, input string, args ...string) (string, error) {
 	argv := append([]string{"--no-optional-locks", "-C", workdir}, args...)
 	cmd := exec.CommandContext(ctx, "git", argv...)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https"}
-	var out limitedGitOutput
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https", "GIT_NO_REPLACE_OBJECTS=1"}
+	if input != "" {
+		cmd.Stdin = strings.NewReader(input)
+	}
+	out := limitedGitOutput{limit: limit}
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("git metadata: %w", err)
@@ -64,19 +74,14 @@ func VerifyGitCommit(ctx context.Context, workdir, expected string) error {
 	return nil
 }
 
-// VerifyPinnedFile binds repository origin, HEAD and regular-file bytes to a Git
-// commit. Git SHA-1 verifies tree membership; callers must also verify SHA-256.
-// It does not guarantee the worktree cannot change after this call.
-func VerifyPinnedFile(ctx context.Context, workdir, repository, commit, file string, contents []byte) error {
+// VerifyGitRepository checks the canonical repository origin and current HEAD.
+func VerifyGitRepository(ctx context.Context, workdir, repository, commit string) error {
 	if repository != strings.ToLower(repository) || !strings.HasPrefix(repository, "github.com/") {
 		return fmt.Errorf("invalid repository identity")
 	}
 	owner, repo, err := parseGitHubURL("https://" + repository)
 	if err != nil || "github.com/"+owner+"/"+repo != repository {
 		return fmt.Errorf("invalid repository identity")
-	}
-	if file == "" || len(file) > 1024 || path.IsAbs(file) || path.Clean(file) != file || file == ".." || strings.HasPrefix(file, "../") || strings.ContainsAny(file, "*?[]\\\x00") || len(contents) == 0 || len(contents) > 1<<20 {
-		return fmt.Errorf("invalid pinned file")
 	}
 	if err := VerifyGitCommit(ctx, workdir, commit); err != nil {
 		return err
@@ -88,6 +93,19 @@ func VerifyPinnedFile(ctx context.Context, workdir, repository, commit, file str
 	actualOwner, actualRepo, err := parseGitHubURL(strings.TrimSpace(origin))
 	if err != nil || "github.com/"+strings.ToLower(actualOwner)+"/"+strings.ToLower(actualRepo) != repository {
 		return fmt.Errorf("verify origin: repository mismatch")
+	}
+	return nil
+}
+
+// VerifyPinnedFile binds repository origin, HEAD and regular-file bytes to a Git
+// commit. Git SHA-1 verifies tree membership; callers must also verify SHA-256.
+// It does not guarantee the worktree cannot change after this call.
+func VerifyPinnedFile(ctx context.Context, workdir, repository, commit, file string, contents []byte) error {
+	if file == "" || len(file) > 1024 || path.IsAbs(file) || path.Clean(file) != file || file == ".." || strings.HasPrefix(file, "../") || strings.ContainsAny(file, "*?[]\\\x00") || len(contents) == 0 || len(contents) > 1<<20 {
+		return fmt.Errorf("invalid pinned file")
+	}
+	if err := VerifyGitRepository(ctx, workdir, repository, commit); err != nil {
+		return err
 	}
 	entry, err := readGit(ctx, workdir, "ls-tree", "-z", commit, "--", file)
 	if err != nil {

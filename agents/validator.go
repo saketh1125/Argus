@@ -125,7 +125,18 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			lastLog = fmt.Sprintf("complete-file patch integrity failed: %v", err)
 			continue
 		}
-		spec := v.buildSpec(ctx, lang, iss.File, patched, cand.RewrittenFunction)
+		files, snapshotErr := tools.SnapshotPinnedRepository(ctx, workdir, cand.Repository, cand.BaseCommit)
+		if snapshotErr != nil {
+			lastLog = fmt.Sprintf("repository snapshot unavailable: %v", snapshotErr)
+			continue
+		}
+		relFile := filepath.ToSlash(iss.File)
+		if files[relFile] != string(original) {
+			lastLog = "snapshot target differs from pinned original"
+			continue
+		}
+		files[relFile] = patched
+		spec := v.buildSpec(lang, relFile, files)
 		if len(spec.Commands) == 0 {
 			lastLog = "validation unavailable: unsupported language"
 			continue
@@ -206,20 +217,14 @@ func (v *Validator) patchedContent(original, origFunc, rewrite string) (string, 
 	return patched, nil
 }
 
-// buildSpec assembles a SandboxSpec: write the patched file, run the syntax check,
-// and — when no test is present — optionally synthesize and run a minimal test.
-func (v *Validator) buildSpec(ctx context.Context, lang, relFile, patched, rewrite string) services.SandboxSpec {
-	files := map[string]string{relFile: patched}
+// buildSpec stages the bounded committed tree and target patch. It does not set
+// RepositoryContext: the provider has not verified the revision in isolation,
+// and the only configured command is a syntax check, not a repository test.
+func (v *Validator) buildSpec(lang, relFile string, files map[string]string) services.SandboxSpec {
 	commands := agtSyntaxCmd(lang, relFile)
-
 	timeout := v.cfg.SandboxTimeout
 	if timeout <= 0 {
 		timeout = 60
 	}
-	return services.SandboxSpec{
-		Language:   lang,
-		Files:      files,
-		Commands:   commands,
-		TimeoutSec: timeout,
-	}
+	return services.SandboxSpec{Language: lang, Files: files, Commands: commands, TimeoutSec: timeout}
 }
