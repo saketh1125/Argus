@@ -47,6 +47,35 @@ func TestDockerBoundaryProbes(t *testing.T) {
 		}
 		return string(out), err
 	}
+	t.Run("timeout explicitly removes container", func(t *testing.T) {
+		name := fmt.Sprintf("argus-boundary-timeout-%d", time.Now().UnixNano())
+		cleanup := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = exec.CommandContext(ctx, docker, "rm", "-f", name).Run()
+		}
+		t.Cleanup(cleanup)
+		createCtx, createCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer createCancel()
+		create := exec.CommandContext(createCtx, docker, "create", "--name", name, "--pull=never", "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=32", "--memory=64m", "--memory-swap=64m", "--cpus=0.5", "--entrypoint", "sleep", image, "30")
+		if out, err := create.CombinedOutput(); err != nil {
+			t.Fatalf("create: %s %v", out, err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = exec.CommandContext(ctx, docker, "start", "-a", name).Run()
+		if ctx.Err() != context.DeadlineExceeded {
+			t.Fatalf("expected client deadline, got %v", ctx.Err())
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		if out, err := exec.CommandContext(cleanupCtx, docker, "rm", "-f", name).CombinedOutput(); err != nil {
+			t.Fatalf("cleanup: %s %v", out, err)
+		}
+		if err := exec.CommandContext(cleanupCtx, docker, "inspect", name).Run(); err == nil {
+			t.Fatal("timed-out container survived cleanup")
+		}
+	})
 	t.Run("runs as non-root", func(t *testing.T) {
 		out, err := run(t, "id", "-u")
 		if err != nil || strings.TrimSpace(out) != "65534" {

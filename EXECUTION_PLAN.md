@@ -1036,6 +1036,11 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - Added opt-in `sandbox_integration` host capability probes. Against local image `sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065`, the tagged tests passed for UID 65534, network unreachable under `--network=none`, a 4 MiB tmpfs size limit, and explicit container removal. The tests invoke only fixed trusted Docker arguments and verify the named container is removed. They assess the host, not an ARGUS provider, and do not prove security or cover the full lifecycle. The provider remains unavailable.
 - Full credential-free local tests and race tests, vet, build and formatting passed with loopback access. Hosted CI [41313012379](https://github.com/saketh1125/Argus/actions/runs/41313012379) passed for `8b57dae4d4cf10b29a7d36941972d6f04c74c4d9`; the opt-in Docker probes are not part of that run. Hosted CI for the new commit remains to be checked. Phase 0 is incomplete.
 
+### P0 continuation — reproducible timeout cleanup probe
+
+- Added an opt-in Docker integration probe that creates a restricted disposable container, cancels the attached client after a deadline, explicitly removes the container, and verifies it no longer exists. The tagged probe passed against the pinned local image. This tests the probe cleanup sequence, not a production sandbox implementation, and does not establish cleanup after daemon failure.
+- Hosted CI [41313255174](https://github.com/saketh1125/Argus/actions/runs/41313255174) passed for `4705d4efb37f89032631aae064aaef2eb3644508`. The tagged Docker probes are opt-in and were run locally, not by hosted CI. Phase 0 and provider integration remain incomplete.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.
