@@ -108,13 +108,24 @@ type SandboxSpec struct {
 	TimeoutSec int
 }
 
+// ValidationLevel records the strongest check actually executed.
+type ValidationLevel string
+
+const (
+	ValidationSyntax        ValidationLevel = "syntax"
+	ValidationTargetedTests ValidationLevel = "targeted_tests"
+	ValidationProjectTests  ValidationLevel = "project_tests"
+)
+
 // SandboxResult captures the outcome of a sandbox run.
 type SandboxResult struct {
-	Success  bool
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	Logs     string
+	Level             ValidationLevel
+	RepositoryContext bool
+	Success           bool
+	ExitCode          int
+	Stdout            string
+	Stderr            string
+	Logs              string
 }
 
 // Sandbox runs untrusted patched code in isolation to validate fixes.

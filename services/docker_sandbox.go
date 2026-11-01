@@ -132,11 +132,11 @@ func (s *dockerSandbox) Run(ctx context.Context, spec SandboxSpec) (result *Sand
 			if !errors.As(runErr, &exitErr) || exitErr.ExitCode() < 0 || exitErr.ExitCode() >= 125 {
 				return nil, fmt.Errorf("docker prototype: execution unavailable: %w", runErr)
 			}
-			return &SandboxResult{Success: false, ExitCode: exitErr.ExitCode(), Stdout: stdout.String(), Stderr: stderr.String(), Logs: "experimental Python syntax check failed"}, nil
+			return &SandboxResult{Level: ValidationSyntax, RepositoryContext: false, Success: false, ExitCode: exitErr.ExitCode(), Stdout: stdout.String(), Stderr: stderr.String(), Logs: "experimental Python syntax check failed"}, nil
 		}
 	}
 	if runCtx.Err() != nil {
 		return nil, runCtx.Err()
 	}
-	return &SandboxResult{Success: true, ExitCode: 0, Stdout: stdout.String(), Stderr: stderr.String(), Logs: "experimental Python syntax check only"}, nil
+	return &SandboxResult{Level: ValidationSyntax, RepositoryContext: false, Success: true, ExitCode: 0, Stdout: stdout.String(), Stderr: stderr.String(), Logs: "experimental Python syntax check only"}, nil
 }

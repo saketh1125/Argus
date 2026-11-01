@@ -297,6 +297,9 @@ func TestDockerPrototypePythonChecks(t *testing.T) {
 			if err != nil || res == nil || res.Success != tc.success || (tc.success && res.ExitCode != 0) || (!tc.success && res.ExitCode == 0) {
 				t.Fatalf("unexpected syntax result: %+v %v", res, err)
 			}
+			if res.Level != ValidationSyntax || res.RepositoryContext {
+				t.Fatalf("prototype overstated validation evidence: %+v", res)
+			}
 			if tc.success && res.Stdout != "" {
 				t.Fatalf("unexpected execution output: %q", res.Stdout)
 			}

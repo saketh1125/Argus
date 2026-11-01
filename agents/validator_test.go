@@ -51,7 +51,7 @@ func pinValidationIssue(t *testing.T, dir string, iss *models.Issue) {
 type passSandbox struct{}
 
 func (passSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
-	return &services.SandboxResult{Success: true, Logs: "ok"}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true, Logs: "ok"}, nil
 }
 func (passSandbox) Name() string            { return "pass-sandbox" }
 func (passSandbox) Live() bool              { return true }
@@ -144,7 +144,7 @@ func TestValidatorRejectsChangedSource(t *testing.T) {
 type failedSandbox struct{}
 
 func (failedSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
-	return &services.SandboxResult{Success: true, ExitCode: 127, Stderr: "interpreter missing"}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true, ExitCode: 127, Stderr: "interpreter missing"}, nil
 }
 func (failedSandbox) Name() string            { return "failed" }
 func (failedSandbox) Live() bool              { return true }
@@ -206,7 +206,7 @@ func (s mutationSandbox) Run(context.Context, services.SandboxSpec) (*services.S
 	if err := os.WriteFile(s.file, []byte("package p\nfunc f() { println(999) }\n"), 0600); err != nil {
 		return nil, err
 	}
-	return &services.SandboxResult{Success: true}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
 }
 func (mutationSandbox) Name() string            { return "mutation" }
 func (mutationSandbox) Live() bool              { return true }
@@ -288,7 +288,7 @@ type commitMutationSandbox struct {
 
 func (s commitMutationSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	validationGit(s.t, s.dir, "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "mutated during validation")
-	return &services.SandboxResult{Success: true}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
 }
 func (commitMutationSandbox) Name() string            { return "commit-mutation" }
 func (commitMutationSandbox) Live() bool              { return true }
@@ -316,7 +316,7 @@ type originMutationSandbox struct {
 
 func (s originMutationSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	validationGit(s.t, s.dir, "remote", "set-url", "origin", "https://github.com/attacker/other.git")
-	return &services.SandboxResult{Success: true}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
 }
 func (originMutationSandbox) Name() string            { return "origin-mutation" }
 func (originMutationSandbox) Live() bool              { return true }
@@ -371,7 +371,7 @@ type countingSandbox struct{ calls int }
 
 func (s *countingSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	s.calls++
-	return &services.SandboxResult{Success: true}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
 }
 func (*countingSandbox) Name() string            { return "counting" }
 func (*countingSandbox) Live() bool              { return true }
@@ -397,7 +397,7 @@ type unverifiedSuccessSandbox struct{ calls int }
 
 func (s *unverifiedSuccessSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	s.calls++
-	return &services.SandboxResult{Success: true}, nil
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
 }
 func (*unverifiedSuccessSandbox) Name() string            { return "unverified" }
 func (*unverifiedSuccessSandbox) Live() bool              { return true }
@@ -416,5 +416,39 @@ func TestValidatorRejectsUnverifiedSandbox(t *testing.T) {
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil || iss.Validated || !iss.Demoted || sandbox.calls != 0 {
 		t.Fatalf("unverified sandbox accepted: %+v calls=%d err=%v", iss, sandbox.calls, err)
+	}
+}
+
+type levelSandbox struct {
+	level             services.ValidationLevel
+	repositoryContext bool
+}
+
+func (s levelSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	return &services.SandboxResult{Success: true, Level: s.level, RepositoryContext: s.repositoryContext}, nil
+}
+func (levelSandbox) Name() string            { return "level-fixture" }
+func (levelSandbox) Live() bool              { return true }
+func (levelSandbox) IsolationVerified() bool { return true }
+
+func TestValidatorRejectsInsufficientValidationEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		level services.ValidationLevel
+		repo  bool
+	}{
+		{services.ValidationSyntax, true}, {services.ValidationTargetedTests, false}, {"", true},
+	} {
+		dir := t.TempDir()
+		original := "package p\nfunc f() {}\n"
+		if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+			t.Fatal(err)
+		}
+		iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+		pinValidationIssue(t, dir, iss)
+		v := NewValidator(levelSandbox{tc.level, tc.repo}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+		_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+		if err != nil || iss.Validated || !iss.Demoted {
+			t.Fatalf("insufficient evidence accepted: %+v %v", iss, err)
+		}
 	}
 }

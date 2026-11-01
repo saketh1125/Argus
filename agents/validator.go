@@ -135,7 +135,7 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			lastLog = fmt.Sprintf("attempt %d: sandbox error: %v", attempt+1, serr)
 			continue
 		}
-		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil {
+		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil && res.RepositoryContext && (res.Level == services.ValidationTargetedTests || res.Level == services.ValidationProjectTests) {
 			resolvedNow, pathErr := filepath.EvalSymlinks(absPath)
 			if pathErr != nil || resolvedNow != resolved {
 				lastLog = "base file changed during validation"
@@ -168,7 +168,10 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			return
 		}
 		log := ""
-		if res != nil {
+		if res != nil && res.Success && (!res.RepositoryContext || (res.Level != services.ValidationTargetedTests && res.Level != services.ValidationProjectTests)) {
+			log = "validation unavailable: insufficient repository-context test evidence"
+		}
+		if res != nil && log == "" {
 			log = res.Stderr
 			if log == "" {
 				log = res.Logs
