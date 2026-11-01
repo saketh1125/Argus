@@ -102,3 +102,21 @@ func TestParseURLRejectsRemoteHelperAndSpoofedHosts(t *testing.T) {
 		}
 	}
 }
+
+func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("sensitive"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "copy")
+	if err := copyDir(root, dest); err == nil {
+		t.Fatal("copied a symlink to outside the repository")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "link")); !os.IsNotExist(err) {
+		t.Fatalf("escaped file copied: %v", err)
+	}
+}

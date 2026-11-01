@@ -41,8 +41,7 @@ func parseGitHubURL(url string) (owner, repo string, err error) {
 	return m[1], m[2], nil
 }
 
-// copyDir recursively copies the directory tree at src into dst, creating dst
-// and any parents. Symlinks are followed as regular files.
+// copyDir copies regular files and directories, rejecting symlinks and special files.
 func copyDir(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
@@ -59,6 +58,13 @@ func copyDir(src, dst string) error {
 		return fmt.Errorf("copy dir: read %s: %w", src, err)
 	}
 	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			return fmt.Errorf("copy dir: inspect %s: %w", e.Name(), err)
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("copy dir: refusing non-regular entry %s", e.Name())
+		}
 		s := filepath.Join(src, e.Name())
 		d := filepath.Join(dst, e.Name())
 		if e.IsDir() {

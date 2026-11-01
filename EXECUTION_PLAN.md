@@ -988,6 +988,11 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - The live clone path previously accepted arbitrary remote strings as Git arguments, allowing remote-helper or option interpretation. It now accepts anchored GitHub URLs, reconstructs an HTTPS URL, uses an option terminator and disables inherited Git configuration and non-HTTPS remote protocols. Spoofed hosts and traversal-like identities are rejected. The adversarial URL test failed before the fix and passes after it. Existing local-copy behavior is unchanged and still requires separate traversal/symlink hardening.
 - Credential-free checkout checks after this change: full tests, race tests, vet, build and formatting passed. Hosted CI has not yet been checked for the commit containing this change. Secure isolated validation, commit-bound provenance and fork/approval publication remain unfinished; Phase 0 is not complete.
 
+### P0 continuation — reject local-copy symlinks
+
+- The local repository copy followed symlinks and could copy files outside the selected tree. It now rejects symlinks and other non-regular entries. A regression with a link to an external file failed before the change and passes afterward; `go test -count=1 ./tools` passed in a credential-free checkout. This path-based check does not eliminate races against concurrent filesystem mutation, nor does it impose copy-size limits; these remain open.
+- Hosted CI run [41311845886](https://github.com/saketh1125/Argus/actions/runs/41311845886) for `10a9f327eb0ef7f34f2e69960d32a5b1d75fa3e6` was in progress when last checked. The subsequent symlink fix is not part of that run. Phase 0 remains in progress; validation and publication remain disabled.
+
 ### Current next action
 
 Start **P0.1 — Establish local baseline**. Do not add features yet.
