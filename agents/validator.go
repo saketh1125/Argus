@@ -136,11 +136,16 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 		files[relFile] = patched
+		provenance, provenanceErr := models.NewPatchProvenance(cand.Repository, cand.BaseCommit, relFile, original, []byte(patched), []byte(fullDiff))
+		if provenanceErr != nil || provenance.OriginalHash != cand.BaseHash {
+			lastLog = "patch provenance unavailable"
+			continue
+		}
 		spec := v.buildSpec(lang, relFile, files, cand.Repository, cand.BaseCommit)
 		spec.TargetPath = relFile
-		spec.OriginalHash = cand.BaseHash
-		spec.ResultHash = fmt.Sprintf("%x", sha256.Sum256([]byte(patched)))
-		spec.PatchDigest = fmt.Sprintf("%x", sha256.Sum256([]byte(fullDiff)))
+		spec.OriginalHash = provenance.OriginalHash
+		spec.ResultHash = provenance.ResultHash
+		spec.PatchDigest = provenance.PatchDigest
 		if len(spec.Commands) == 0 {
 			lastLog = "validation unavailable: unsupported language"
 			continue
@@ -151,6 +156,10 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil {
+			if err := provenance.VerifyBytes(original, []byte(spec.Files[relFile]), []byte(fullDiff)); err != nil {
+				lastLog = "staged patch changed during validation"
+				continue
+			}
 			resolvedNow, pathErr := filepath.EvalSymlinks(absPath)
 			if pathErr != nil || resolvedNow != resolved {
 				lastLog = "base file changed during validation"
@@ -177,8 +186,8 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 				lastLog = "empty complete-file diff"
 				continue
 			}
-			cand.PatchDigest = fmt.Sprintf("%x", sha256.Sum256([]byte(cand.Diff)))
-			cand.ResultHash = fmt.Sprintf("%x", sha256.Sum256([]byte(patched)))
+			cand.PatchDigest = provenance.PatchDigest
+			cand.ResultHash = provenance.ResultHash
 			selected := cand
 			iss.Fix.Selected = &selected
 			iss.Validated = true

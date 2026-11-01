@@ -211,6 +211,31 @@ func TestValidatorDemotesWhenProviderUnavailable(t *testing.T) {
 
 type mutationSandbox struct{ file string }
 
+type stagedMutationSandbox struct{}
+
+func (stagedMutationSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
+	spec.Files[spec.TargetPath] = "changed after staging"
+	return &services.SandboxResult{Success: true, Level: services.ValidationTargetedTests, RepositoryContext: true}, nil
+}
+func (stagedMutationSandbox) Name() string            { return "staged-mutation" }
+func (stagedMutationSandbox) Live() bool              { return true }
+func (stagedMutationSandbox) IsolationVerified() bool { return true }
+
+func TestValidatorRejectsStagedPatchMutation(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	pinValidationIssue(t, dir, iss)
+	v := NewValidator(stagedMutationSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil || iss.Validated || !iss.Demoted || !strings.Contains(iss.ValidationLog, "staged patch changed") {
+		t.Fatalf("staged mutation not identified: issue=%+v err=%v", iss, err)
+	}
+}
+
 func (s mutationSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
 	if err := os.WriteFile(s.file, []byte("package p\nfunc f() { println(999) }\n"), 0600); err != nil {
 		return nil, err
