@@ -41,59 +41,83 @@ func parseGitHubURL(url string) (owner, repo string, err error) {
 	return m[1], m[2], nil
 }
 
-// copyDir copies regular files and directories, rejecting symlinks and special files.
+// copyDir copies regular files and directories beneath directory handles.
+// Root confines path resolution even when repository entries are replaced while
+// copying. It does not prohibit mount points or guarantee a consistent snapshot.
 func copyDir(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("copy dir: stat %s: %w", src, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("copy dir: %s is not a directory", src)
-	}
 	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return fmt.Errorf("copy dir: mkdir %s: %w", dst, err)
+		return fmt.Errorf("copy dir: mkdir destination: %w", err)
 	}
-	entries, err := os.ReadDir(src)
+	source, err := os.OpenRoot(src)
 	if err != nil {
-		return fmt.Errorf("copy dir: read %s: %w", src, err)
+		return fmt.Errorf("copy dir: open source: %w", err)
 	}
-	for _, e := range entries {
-		info, err := e.Info()
+	defer source.Close()
+	target, err := os.OpenRoot(dst)
+	if err != nil {
+		return fmt.Errorf("copy dir: open destination: %w", err)
+	}
+	defer target.Close()
+	return copyRootDir(source, target, ".")
+}
+
+func copyRootDir(source, target *os.Root, rel string) error {
+	dir, err := source.Open(rel)
+	if err != nil {
+		return fmt.Errorf("copy dir: open %s: %w", rel, err)
+	}
+	entries, readErr := dir.ReadDir(-1)
+	closeErr := dir.Close()
+	if readErr != nil {
+		return fmt.Errorf("copy dir: read %s: %w", rel, readErr)
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	for _, entry := range entries {
+		name := filepath.Join(rel, entry.Name())
+		info, err := source.Lstat(name)
 		if err != nil {
-			return fmt.Errorf("copy dir: inspect %s: %w", e.Name(), err)
+			return fmt.Errorf("copy dir: inspect %s: %w", name, err)
 		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("copy dir: refusing non-regular entry %s", e.Name())
-		}
-		s := filepath.Join(src, e.Name())
-		d := filepath.Join(dst, e.Name())
-		if e.IsDir() {
-			if err := copyDir(s, d); err != nil {
+		if info.IsDir() {
+			if err := target.Mkdir(name, 0o755); err != nil {
+				return fmt.Errorf("copy dir: mkdir %s: %w", name, err)
+			}
+			if err := copyRootDir(source, target, name); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := copyFile(s, d); err != nil {
-			return err
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("copy dir: refusing non-regular entry %s", name)
 		}
-	}
-	return nil
-}
-
-// copyFile copies a single regular file from src to dst.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("copy file: open %s: %w", src, err)
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("copy file: create %s: %w", dst, err)
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("copy file: %s -> %s: %w", src, dst, err)
+		in, err := source.Open(name)
+		if err != nil {
+			return fmt.Errorf("copy dir: open %s: %w", name, err)
+		}
+		opened, err := in.Stat()
+		if err != nil || !opened.Mode().IsRegular() {
+			in.Close()
+			return fmt.Errorf("copy dir: opened non-regular entry %s", name)
+		}
+		out, err := target.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			in.Close()
+			return fmt.Errorf("copy dir: create %s: %w", name, err)
+		}
+		_, copyErr := io.Copy(out, in)
+		inErr := in.Close()
+		outErr := out.Close()
+		if copyErr != nil {
+			return fmt.Errorf("copy dir: copy %s: %w", name, copyErr)
+		}
+		if inErr != nil {
+			return inErr
+		}
+		if outErr != nil {
+			return outErr
+		}
 	}
 	return nil
 }

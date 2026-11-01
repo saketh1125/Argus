@@ -1011,6 +1011,11 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - A separate timeout probe killed the `docker start -a` client after one second (exit 124); Docker reported the container was still running. Explicit `docker rm -f` removed it, confirmed by a failed subsequent inspect. Therefore client timeout alone is insufficient: any provider must explicitly terminate and verify cleanup, including cancellation and daemon errors. Isolation, extraction defenses, resource enforcement under attack and failure-path cleanup remain unverified; no provider was enabled.
 - A separate disposable-container traversal probe streamed a tar entry named `../argus-escape-probe` to the image's `tar -xf`. Tar reported removing the leading `../` but returned exit code 0; the outside marker was absent. This demonstrates that command success does not prove the archive was safe or extracted at the intended path. The local archive constructor rejects such paths before transfer, but adversarial extraction, symlink manipulation, runtime escape, timeout enforcement and cleanup across daemon failures remain unverified; this is not provider certification.
 
+### P0 continuation — root-confined repository copy
+
+- Local-copy reads and writes now use Go `os.Root` directory handles, reducing traversal escapes during path replacement. Added a destination-symlink regression alongside the existing source-symlink test. Directory handles do not prevent mount traversal, internal symlink substitution, special-file races, or ensure a consistent source snapshot; file count/size bounds remain outstanding. The safe sandbox and publication paths remain unavailable.
+- Full credential-free local tests, race tests, vet, build and formatting passed with loopback access after the change. Hosted CI must be observed for the resulting commit. No Phase 0 exit gate or Phase 1 milestone is complete.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.

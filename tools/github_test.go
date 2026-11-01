@@ -120,3 +120,24 @@ func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("escaped file copied: %v", err)
 	}
 }
+
+func TestCopyDirRejectsDestinationSymlink(t *testing.T) {
+	src := t.TempDir()
+	if err := os.Mkdir(filepath.Join(src, "sub"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "sub", "file"), []byte("payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dst := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dst, "sub")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyDir(src, dst); err == nil {
+		t.Fatal("accepted pre-existing destination symlink")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "file")); !os.IsNotExist(err) {
+		t.Fatalf("wrote outside destination: %v", err)
+	}
+}
