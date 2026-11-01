@@ -132,6 +132,7 @@ type FixCandidate struct {
 	PatchedFile string `json:"patched_file,omitempty"`
 	BaseHash    string `json:"base_hash,omitempty"`
 	ResultHash  string `json:"result_hash,omitempty"`
+	PatchDigest string `json:"patch_digest,omitempty"`
 }
 
 // Fix bundles the candidate rewrites for an issue and records which one was

@@ -976,6 +976,12 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - In a credential-free Git checkout with loopback available, `go test -count=1 ./...`, `go test -race -count=1 ./...`, `go vet ./...`, `go build ./...` passed and `gofmt -l .` reported no files. These checks include the previously uncommitted provider-failure test and provenance changes; no live provider test ran. Hosted CI must be verified against the resulting commit.
 - The host has Docker with shared kernel, but no `/dev/kvm`, Firecracker or gVisor executable found. A secure provider lifecycle, adversarial isolation, commit-pinned ingestion, authenticated durable approval and fork publication remain outstanding. Phase 0 is not complete and Phase 1 has not started.
 
+### P0 continuation — recheck source during validation
+
+- Hosted CI [41311612987](https://github.com/saketh1125/Argus/actions/runs/41311612987) passed for commit `59cc2ec34a7a2e8a1e2d07ddb6e798151362cdad`, including formatting, vet, build, tests and race checks.
+- Validator now re-resolves and re-hashes its source after the sandbox returns and rejects an observed change; an adversarial mutation test failed before the fix and passes after it. The selected candidate now carries the full-file diff and its SHA-256 digest. This does not close filesystem TOCTOU races, establish commit pinning or verify patch application at publication; publication remains blocked.
+- For the new code, `go test -count=1 ./...`, `go test -race -count=1 ./...`, `go vet ./...`, `go build ./...` and formatting checks passed in the credential-free checkout with loopback access. Hosted CI must be checked for the commit containing this change. The isolated provider, authenticated approval, fork workflow and Phase 0 exit gate remain open.
+
 ### Current next action
 
 Start **P0.1 — Establish local baseline**. Do not add features yet.

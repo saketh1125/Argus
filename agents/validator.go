@@ -114,9 +114,25 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 		if res != nil && res.Success && res.ExitCode == 0 && ctx.Err() == nil {
+			resolvedNow, pathErr := filepath.EvalSymlinks(absPath)
+			if pathErr != nil || resolvedNow != resolved {
+				lastLog = "base file changed during validation"
+				continue
+			}
+			current, readErr := os.ReadFile(resolvedNow)
+			if readErr != nil || fmt.Sprintf("%x", sha256.Sum256(current)) != cand.BaseHash {
+				lastLog = "base file changed during validation"
+				continue
+			}
 			// Carry the validated full-file content forward so the PR agent can
 			// commit a single-function edit instead of replacing the whole file.
 			cand.PatchedFile = patched
+			cand.Diff = tools.UnifiedDiff(string(original), patched, iss.File)
+			if cand.Diff == "" {
+				lastLog = "empty complete-file diff"
+				continue
+			}
+			cand.PatchDigest = fmt.Sprintf("%x", sha256.Sum256([]byte(cand.Diff)))
 			cand.ResultHash = fmt.Sprintf("%x", sha256.Sum256([]byte(patched)))
 			selected := cand
 			iss.Fix.Selected = &selected

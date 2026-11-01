@@ -68,6 +68,9 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	// PatchedFile must be the FULL file with f rewritten — i.e. it must still
 	// contain the untouched sibling function g(), proving the whole file was
 	// preserved and only f was edited.
+	if got.Fix.Selected.PatchDigest != fmt.Sprintf("%x", sha256.Sum256([]byte(got.Fix.Selected.Diff))) || got.Fix.Selected.Diff == "d" {
+		t.Fatal("expected digest of the full-file diff")
+	}
 	if got.Fix.Selected.PatchedFile == "" {
 		t.Fatal("expected Selected.PatchedFile to be populated with the full patched file")
 	}
@@ -155,5 +158,31 @@ func TestValidatorDemotesWhenProviderUnavailable(t *testing.T) {
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil || iss.Validated || !iss.Demoted || !strings.Contains(iss.ValidationLog, "unavailable") {
 		t.Fatalf("provider failure must invalidate validation: issue=%+v err=%v", iss, err)
+	}
+}
+
+type mutationSandbox struct{ file string }
+
+func (s mutationSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	if err := os.WriteFile(s.file, []byte("package p\nfunc f() { println(999) }\n"), 0600); err != nil {
+		return nil, err
+	}
+	return &services.SandboxResult{Success: true}, nil
+}
+func (mutationSandbox) Name() string { return "mutation" }
+func (mutationSandbox) Live() bool   { return false }
+
+func TestValidatorRejectsSourceChangedDuringSandbox(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}\n"
+	file := filepath.Join(dir, "f.go")
+	if err := os.WriteFile(file, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{File: "f.go", Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	v := NewValidator(mutationSandbox{file}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil || iss.Validated || !iss.Demoted {
+		t.Fatalf("source mutation accepted: issue=%+v err=%v", iss, err)
 	}
 }
