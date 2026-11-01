@@ -1026,6 +1026,16 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - The live NIM integration test previously loaded `.env` and logged the API key when ordinary tests ran. It now requires `NIM_LIVE_TEST=1` before configuration is loaded and does not log the API key or endpoint. A credential-free test with a harmless sentinel credential and no opt-in skipped before any provider call, with no sentinel printed. The real provider test was not run.
 - Full credential-free local tests, race tests, vet, build and formatting passed. Hosted CI [41312812688](https://github.com/saketh1125/Argus/actions/runs/41312812688) passed for `b37fabc7d7f6d6eea014457f7ae400d746bff9f3`; [41312898305](https://github.com/saketh1125/Argus/actions/runs/41312898305) passed for `e178763dbc8642892c3cf80cba145559a1800aa6`. Hosted CI for this change has not yet been observed. Phase 0 is incomplete.
 
+### P0 continuation — adversarial container resource probes
+
+- Hosted CI [41313012379](https://github.com/saketh1125/Argus/actions/runs/41313012379) succeeded for `8b57dae4d4cf10b29a7d36941972d6f04c74c4d9`.
+- Additional disposable-container probes using the existing local `redis:7-alpine` image and restrictive Docker flags observed: an external connection with `--network=none` returned `Network unreachable`; writing 8 MiB into a 4 MiB tmpfs failed with `No space left on device` after 4 MiB; spawning 24 short-lived sleeps with a 16-process cgroup limit failed with `can't fork: Resource temporarily unavailable`; and writing to a 128 MiB tmpfs under a 32 MiB no-swap memory limit caused exit 137 with Docker reporting `OOMKilled=true`. Probe containers were removed. These isolated observations do not establish CPU enforcement under load, filesystem escape resistance, cleanup after daemon failure, trusted image provenance, or safe application integration. Docker remains disabled in ARGUS; Phase 0 remains incomplete.
+
+### P0 continuation — reproducible container capability probes
+
+- Added opt-in `sandbox_integration` host capability probes. Against local image `sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065`, the tagged tests passed for UID 65534, network unreachable under `--network=none`, a 4 MiB tmpfs size limit, and explicit container removal. The tests invoke only fixed trusted Docker arguments and verify the named container is removed. They assess the host, not an ARGUS provider, and do not prove security or cover the full lifecycle. The provider remains unavailable.
+- Full credential-free local tests and race tests, vet, build and formatting passed with loopback access. Hosted CI [41313012379](https://github.com/saketh1125/Argus/actions/runs/41313012379) passed for `8b57dae4d4cf10b29a7d36941972d6f04c74c4d9`; the opt-in Docker probes are not part of that run. Hosted CI for the new commit remains to be checked. Phase 0 is incomplete.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.
