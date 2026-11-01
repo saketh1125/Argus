@@ -3,6 +3,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -47,6 +48,41 @@ func TestDockerBoundaryProbes(t *testing.T) {
 		}
 		return string(out), err
 	}
+	t.Run("transfer bounded archive", func(t *testing.T) {
+		archive, err := sandboxArchive(map[string]string{"nested/input": "argus-transfer-check"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := fmt.Sprintf("argus-boundary-transfer-%d", time.Now().UnixNano())
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if out, err := exec.CommandContext(ctx, docker, "rm", "-f", name).CombinedOutput(); err != nil {
+				t.Errorf("cleanup: %s %v", out, err)
+			}
+			if err := exec.CommandContext(ctx, docker, "inspect", name).Run(); err == nil {
+				t.Error("container survived cleanup")
+			}
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		create := exec.CommandContext(ctx, docker, "create", "--name", name, "--pull=never", "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=32", "--memory=64m", "--memory-swap=64m", "--cpus=0.5", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m", "--entrypoint", "sleep", image, "30")
+		if out, err := create.CombinedOutput(); err != nil {
+			t.Fatalf("create: %s %v", out, err)
+		}
+		if out, err := exec.CommandContext(ctx, docker, "start", name).CombinedOutput(); err != nil {
+			t.Fatalf("start: %s %v", out, err)
+		}
+		extract := exec.CommandContext(ctx, docker, "exec", "-i", "--user=65534:65534", name, "tar", "-xf", "-", "-C", "/tmp")
+		extract.Stdin = bytes.NewReader(archive)
+		if out, err := extract.CombinedOutput(); err != nil {
+			t.Fatalf("extract: %s %v", out, err)
+		}
+		out, err := exec.CommandContext(ctx, docker, "exec", "--user=65534:65534", name, "cat", "/tmp/nested/input").CombinedOutput()
+		if err != nil || string(out) != "argus-transfer-check" {
+			t.Fatalf("transfer: %q %v", out, err)
+		}
+	})
 	t.Run("timeout explicitly removes container", func(t *testing.T) {
 		name := fmt.Sprintf("argus-boundary-timeout-%d", time.Now().UnixNano())
 		cleanup := func() {
@@ -82,10 +118,95 @@ func TestDockerBoundaryProbes(t *testing.T) {
 			t.Fatalf("unexpected identity: %q %v", out, err)
 		}
 	})
+	t.Run("capabilities dropped", func(t *testing.T) {
+		out, err := run(t, "cat", "/proc/self/status")
+		if err != nil || !strings.Contains(out, "CapEff:\t0000000000000000") || !strings.Contains(out, "NoNewPrivs:\t1") {
+			t.Fatalf("unexpected process security state: %q %v", out, err)
+		}
+	})
+	t.Run("root filesystem readonly", func(t *testing.T) {
+		out, err := run(t, "cat", "/proc/mounts")
+		if err != nil {
+			t.Fatalf("mounts: %v", err)
+		}
+		readonly := false
+		for _, line := range strings.Split(out, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 && fields[1] == "/" {
+				for _, option := range strings.Split(fields[3], ",") {
+					if option == "ro" {
+						readonly = true
+					}
+				}
+			}
+		}
+		if !readonly {
+			t.Fatal("root filesystem not reported read-only")
+		}
+	})
+	t.Run("host temporary file absent", func(t *testing.T) {
+		file, err := os.CreateTemp("", "argus-host-boundary-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := file.Name()
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(name) })
+		out, err := run(t, "test", "!", "-e", name)
+		if err != nil {
+			t.Fatalf("host file visible in container: %q %v", out, err)
+		}
+	})
+	t.Run("docker socket absent", func(t *testing.T) {
+		out, err := run(t, "test", "!", "-e", "/var/run/docker.sock")
+		if err != nil {
+			t.Fatalf("docker socket accessible: %q %v", out, err)
+		}
+	})
+	t.Run("cpu quota configured", func(t *testing.T) {
+		out, err := run(t, "cat", "/sys/fs/cgroup/cpu.max")
+		if err != nil || strings.TrimSpace(out) != "50000 100000" {
+			t.Fatalf("unexpected CPU quota: %q %v", out, err)
+		}
+	})
 	t.Run("network disabled", func(t *testing.T) {
 		out, err := run(t, "redis-cli", "-h", "1.1.1.1", "-p", "53", "ping")
 		if err == nil || !strings.Contains(out, "Network unreachable") {
 			t.Fatalf("unexpected network result: %q %v", out, err)
+		}
+	})
+	t.Run("memory limit enforced", func(t *testing.T) {
+		name := fmt.Sprintf("argus-boundary-memory-%d", time.Now().UnixNano())
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if out, err := exec.CommandContext(ctx, docker, "rm", "-f", name).CombinedOutput(); err != nil {
+				t.Errorf("cleanup: %s %v", out, err)
+				return
+			}
+			if err := exec.CommandContext(ctx, docker, "inspect", name).Run(); err == nil {
+				t.Error("container survived cleanup")
+			}
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		create := exec.CommandContext(ctx, docker, "create", "--name", name, "--pull=never", "--network=none", "--read-only", "--user=65534:65534", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=16", "--memory=32m", "--memory-swap=32m", "--cpus=0.5", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=128m", "--entrypoint", "dd", image, "if=/dev/zero", "of=/tmp/over", "bs=1048576", "count=128")
+		if out, err := create.CombinedOutput(); err != nil {
+			t.Fatalf("create: %s %v", out, err)
+		}
+		_ = exec.CommandContext(ctx, docker, "start", "-a", name).Run()
+		out, err := exec.CommandContext(ctx, docker, "inspect", "--format", "{{.State.OOMKilled}} {{.State.ExitCode}}", name).CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != "true 137" {
+			t.Fatalf("expected cgroup OOM kill: %q %v", out, err)
+		}
+	})
+	t.Run("process limit enforced", func(t *testing.T) {
+		// This fixed test program creates only short-lived sleeps; it is not repository or model input.
+		out, err := run(t, "sh", "-c", `i=0; while [ "$i" -lt 48 ]; do sleep 2 & i=$((i+1)); done; wait`)
+		if err == nil || !strings.Contains(out, "can't fork") {
+			t.Fatalf("unexpected process-limit result: %q %v", out, err)
 		}
 	})
 	t.Run("tmpfs size enforced", func(t *testing.T) {
