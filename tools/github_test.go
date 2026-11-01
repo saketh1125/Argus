@@ -94,3 +94,11 @@ func TestLiveGitHubWritesFailClosed(t *testing.T) {
 		t.Error("issue write allowed")
 	}
 }
+
+func TestParseURLRejectsRemoteHelperAndSpoofedHosts(t *testing.T) {
+	for _, raw := range []string{"ext::sh -c touch marker", "--upload-pack=sh", "https://evil.example/github.com/owner/repo", "https://github.com.evil.example/owner/repo", "https://github.com/../repo", "https://github.com/owner/.."} {
+		if _, _, err := parseGitHubURL(raw); err == nil {
+			t.Errorf("accepted unsafe URL %q", raw)
+		}
+	}
+}

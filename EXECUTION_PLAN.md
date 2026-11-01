@@ -982,6 +982,12 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - Validator now re-resolves and re-hashes its source after the sandbox returns and rejects an observed change; an adversarial mutation test failed before the fix and passes after it. The selected candidate now carries the full-file diff and its SHA-256 digest. This does not close filesystem TOCTOU races, establish commit pinning or verify patch application at publication; publication remains blocked.
 - For the new code, `go test -count=1 ./...`, `go test -race -count=1 ./...`, `go vet ./...`, `go build ./...` and formatting checks passed in the credential-free checkout with loopback access. Hosted CI must be checked for the commit containing this change. The isolated provider, authenticated approval, fork workflow and Phase 0 exit gate remain open.
 
+### P0 continuation — constrain Git clone inputs
+
+- Hosted CI [41311729107](https://github.com/saketh1125/Argus/actions/runs/41311729107) succeeded for commit `034a9b7f77664a1f7d31813e30f508e90ab79284`.
+- The live clone path previously accepted arbitrary remote strings as Git arguments, allowing remote-helper or option interpretation. It now accepts anchored GitHub URLs, reconstructs an HTTPS URL, uses an option terminator and disables inherited Git configuration and non-HTTPS remote protocols. Spoofed hosts and traversal-like identities are rejected. The adversarial URL test failed before the fix and passes after it. Existing local-copy behavior is unchanged and still requires separate traversal/symlink hardening.
+- Credential-free checkout checks after this change: full tests, race tests, vet, build and formatting passed. Hosted CI has not yet been checked for the commit containing this change. Secure isolated validation, commit-bound provenance and fork/approval publication remain unfinished; Phase 0 is not complete.
+
 ### Current next action
 
 Start **P0.1 — Establish local baseline**. Do not add features yet.

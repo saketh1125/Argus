@@ -30,12 +30,12 @@ const sampleRepoPath = "testdata/sample-repo"
 // githubURLRe extracts owner/repo from a GitHub URL. The repo group is
 // non-greedy and stops before an optional ".git" suffix so both
 // "…/repo" and "…/repo.git" yield "repo".
-var githubURLRe = regexp.MustCompile(`github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$`)
+var githubURLRe = regexp.MustCompile(`^(?:https://github\.com/|git@github\.com:)([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$`)
 
 // parseGitHubURL is the shared, pure URL parser used by both adapters.
 func parseGitHubURL(url string) (owner, repo string, err error) {
 	m := githubURLRe.FindStringSubmatch(strings.TrimSpace(url))
-	if m == nil {
+	if m == nil || m[1] == "." || m[1] == ".." || m[2] == "." || m[2] == ".." {
 		return "", "", fmt.Errorf("parse url: %q is not a recognized GitHub URL", url)
 	}
 	return m[1], m[2], nil
@@ -131,7 +131,14 @@ func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error
 		}
 		return dest, nil
 	}
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", url, dest)
+	owner, repo, err := parseGitHubURL(url)
+	if err != nil {
+		return "", fmt.Errorf("clone: invalid GitHub URL: %w", err)
+	}
+	canonical := "https://github.com/" + owner + "/" + repo + ".git"
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--", canonical, dest)
+	// Do not allow inherited git configuration or remote helpers to rewrite the URL.
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=https"}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
