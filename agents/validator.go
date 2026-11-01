@@ -57,6 +57,10 @@ func (v *Validator) Run(ctx context.Context, workdir string, issues []*models.Is
 // validate applies and runs the issue's fix candidates in rank order, marking the
 // issue validated or demoted.
 func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Issue) {
+	iss.Validated = false
+	if iss.Fix != nil {
+		iss.Fix.Selected = nil
+	}
 	if iss.Fix == nil || len(iss.Fix.Candidates) == 0 {
 		iss.Validated = false
 		iss.Demoted = true

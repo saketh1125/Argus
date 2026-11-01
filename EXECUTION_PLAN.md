@@ -1016,6 +1016,11 @@ Preparation only; **all phase statuses above remain NOT STARTED**. Next implemen
 - Local-copy reads and writes now use Go `os.Root` directory handles, reducing traversal escapes during path replacement. Added a destination-symlink regression alongside the existing source-symlink test. Directory handles do not prevent mount traversal, internal symlink substitution, special-file races, or ensure a consistent source snapshot; file count/size bounds remain outstanding. The safe sandbox and publication paths remain unavailable.
 - Full credential-free local tests, race tests, vet, build and formatting passed with loopback access after the change. Hosted CI must be observed for the resulting commit. No Phase 0 exit gate or Phase 1 milestone is complete.
 
+### P0 continuation — invalidate stale selected patches
+
+- The validator now clears an existing selected patch and validated state before each attempt. A regression shows an unavailable provider previously left the old selection attached; it failed before the change and passes afterward. This reduces stale patch reuse but does not implement commit-bound validation or approval; publication remains disabled.
+- Full credential-free local tests, race tests, vet, build and formatting passed with loopback access. Hosted CI for the resulting commit remains to be checked. Phase 0 remains in progress.
+
 ### Current next action
 
 Continue Phase 0: verify a genuine isolated sandbox lifecycle, integrate commit-bound provenance, authenticated approval and fork publication. Preserve fail-closed behavior and record actual evidence. The user has explicitly authorized continuous work for this session: after every Phase 0 exit criterion passes and the completion milestone is committed, pushed and verified, proceed into Phase 1 without waiting. Never bypass an unmet gate.

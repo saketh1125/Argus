@@ -186,3 +186,18 @@ func TestValidatorRejectsSourceChangedDuringSandbox(t *testing.T) {
 		t.Fatalf("source mutation accepted: issue=%+v err=%v", iss, err)
 	}
 }
+
+func TestValidatorClearsStaleSelectedPatchAfterFailure(t *testing.T) {
+	dir := t.TempDir()
+	original := "package p\nfunc f() {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := &models.FixCandidate{PatchedFile: "previously validated file", BaseHash: "old", ResultHash: "old", PatchDigest: "old"}
+	iss := &models.Issue{File: "f.go", Validated: true, Fix: &models.Fix{OriginalFunction: "func f() {}", Selected: old, Candidates: []models.FixCandidate{{RewrittenFunction: "func f() { println(1) }", BaseHash: fmt.Sprintf("%x", sha256.Sum256([]byte(original)))}}}}
+	v := NewValidator(unavailableTestSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil || iss.Validated || iss.Fix.Selected != nil {
+		t.Fatalf("stale selection survived failed validation: %+v, %v", iss, err)
+	}
+}
