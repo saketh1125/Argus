@@ -46,11 +46,16 @@ P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effe
 - Mock-backed checks: missing/present-but-disabled adapter tests passed in the Go suite; offline sample workflow — PASS, all adapters labelled mock, `sandbox=unavailable`, zero PRs, two candidates demoted.
 - Static checks: `go vet ./...` — PASS; changed-file `gofmt -l` — no output; `git diff --check` — PASS with Windows line-ending warnings; `go build ./...` — exit 0 with restricted module stat-cache warning.
 - Local `go test -race ./...` — BLOCKED because `CGO_ENABLED=0`. Run [#55](https://github.com/saketh1125/Argus/actions/runs/41666072125) passed CI on pushed commit `69c2d83`, before the current local portability change.
+- After commit `b79abba` was pushed, CI runs [#56](https://github.com/saketh1125/Argus/actions/runs/41668264467) and [#57](https://github.com/saketh1125/Argus/actions/runs/41668279346) both passed formatting, `go test ./...`, vet, race tests, native build and Windows AMD64 cross-build.
 - Live E2B, NIM and GitHub publication were not run. E2B requires `E2B_API_KEY` only after an adapter is implemented and explicit authorization is given. NIM requires `NIM_API_KEY` and `ARGUS_RUN_LIVE_NIM_TESTS=true`. GitHub write credentials are not useful until the required approval/fork protections are implemented; writes remain rejected.
 
 ### Status
 
-P0 remains **IN PROGRESS**. The Windows-to-Linux command-generation defect is fixed locally; its CI result is pending. The genuine isolated provider, live sandbox lifecycle evidence, exact-patch approval and fork-based publishing remain unverified or blocked.
+P0 remains **IN PROGRESS**. The Windows-to-Linux command-generation defect is fixed and passed CI. The genuine isolated provider, live sandbox lifecycle evidence, exact-patch approval and fork-based publishing remain unverified or blocked.
+
+### Goal State completion estimate
+
+**86%** by equal-weight Phase 0 acceptance-row scoring: 15 of 18 requirements are VERIFIED, 1 is PARTIALLY VERIFIED (counted as one half), and 2 are BLOCKED. This checklist percentage does not mean the phase exit gate is met; the live isolated-provider requirement and publication approval/fork workflow remain substantial blockers.
 
 ## Continued audit — 2026-11-03
 

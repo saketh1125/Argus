@@ -132,3 +132,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Local `go test -race ./...` — BLOCKED: Go requires CGO and `CGO_ENABLED=0`. Offline sample run — PASS: mock mode identified, sandbox unavailable, zero PRs, two candidates demoted.
 - Live E2B/NIM/GitHub verification — NOT RUN. Live E2B will require a reviewed adapter, `E2B_API_KEY`, and explicit user authorization before credential transfer; no credential is requested by this checkpoint. Live NIM requires `NIM_API_KEY` plus `ARGUS_RUN_LIVE_NIM_TESTS=true`. GitHub live publication remains fail-closed pending exact-patch approval and fork workflow.
 - Phase 0 remains IN PROGRESS. No new Critical/High bypass was found in this pass. Local edits and CI status are pending checkpoint commit/push.
+
+## 2026-11-03 — Validator portability CI confirmation
+
+- Committed the Windows-to-Linux validator portability fix and checkpoint updates as `b79abbae397ae97c2fca84b1d9f7a7ea2a8f1a48`, then pushed a fast-forward from `69c2d83`; no history rewrite or merge was performed.
+- PR #2 remains open, draft and unmerged at `b79abba`.
+- GitHub Actions runs [#56](https://github.com/saketh1125/Argus/actions/runs/41668264467) and [#57](https://github.com/saketh1125/Argus/actions/runs/41668279346) both passed formatting, tests, vet, race tests, native build and Windows AMD64 cross-build.
+- Phase 0 remains IN PROGRESS. CI verifies the command-construction change, while live E2B execution still requires a reviewed provider implementation, `E2B_API_KEY`, and explicit authorization. Exact-patch human approval and fork-based publication remain unimplemented and live writes remain disabled.
