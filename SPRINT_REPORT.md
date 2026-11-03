@@ -86,13 +86,13 @@ Current estimate: **87%** by equal-weight checklist scoring: 16 of 19 rows VERIF
 
 ### Verification
 
-- Focused regression command — PASS, but the test was **SKIPPED** on this Windows host because creating symlinks requires a privilege unavailable here. The Linux CI job must execute the test before the finding is marked VERIFIED.
+- Focused regression command — package passed locally, but the test was **SKIPPED** on this Windows host because creating symlinks requires a privilege unavailable here. GitHub Actions run [#65](https://github.com/saketh1125/Argus/actions/runs/41681861358) passed on `ubuntu-latest` and executed the symlink case.
 - `go test ./agents -count=1` and `go test ./... -count=1` — PASS; `go vet ./...` — PASS; `go build ./...` — exit 0 with the restricted module stat-cache warning.
-- CI run #63 passed on the pushed documentation head `37022ff`; it predates this local code change. CI for the symlink fix is pending. No live credentials or provider calls were used.
+- CI run #65 passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build on `b135e96`. No live credentials or provider calls were used.
 
 ### Current estimate and status
 
-Current working-copy estimate: **84%** by equal-weight checklist scoring: 15 of 19 rows VERIFIED, 2 PARTIALLY VERIFIED (each counts as one half), and 2 BLOCKED. The host clone/preprocessing row and current-code CI row are partial until Linux CI runs this test. E2B execution and exact-patch approval/fork publication remain blocked; Phase 0 is still in progress.
+Current working-copy estimate: **87%** by equal-weight checklist scoring: 16 of 19 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. Linux CI verified symlink filtering and all configured checks on `b135e96`. E2B execution and exact-patch approval/fork publication remain blocked; Phase 0 is still in progress.
 
 ## Continued audit — 2026-11-03
 

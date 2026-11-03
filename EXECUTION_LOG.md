@@ -163,4 +163,11 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Found a High host-data exposure risk: live Git checkouts can contain symlink entries, and preprocessing later read selected paths with `os.ReadFile` without rejecting symlinks. A repository link could point outside the checkout and expose the target contents to parsing/embedding providers.
 - Candidate discovery now ignores symlink entries and non-regular files before the later reads. Added `TestCollectSourceCandidatesSkipsSymlinkTargetsOutsideCheckout`.
 - Focused regression and package/full Go tests passed, but Windows skipped symlink creation because the host lacks the required privilege. `go vet ./...` passed; `go build ./...` exited 0 with the restricted module stat-cache warning. Linux CI is required for execution evidence and is pending.
-- Starting pushed head was `37022ff`; CI run #63 passed on that prior head. No live credentials/provider calls were used. This fix is local and uncommitted at this log entry.
+- Starting pushed head was `37022ff`; CI run #63 passed on that prior head. At this checkpoint entry the fix was local and pending CI; the following entry records its commit and CI result. No live credentials/provider calls were used.
+
+## 2026-11-03 — Repository symlink boundary CI confirmation
+
+- Committed the symlink filtering fix and regression as `b135e96f2d6b2b372fb29acd60e0cce2a960ccc7` and pushed a fast-forward from `37022ff`.
+- GitHub Actions run [#65](https://github.com/saketh1125/Argus/actions/runs/41681861358) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build on `ubuntu-latest`. The symlink regression executed there; it skips only on this Windows host due symlink privilege restrictions.
+- Host clone/preprocessing boundary and current-code CI checkpoint are now VERIFIED. The equal-weight 19-row estimate is 87%: 16 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED.
+- PR #2 remains draft and unmerged. E2B provider execution and exact-patch approval/fork publication remain unresolved. No credentials or live services were used.
