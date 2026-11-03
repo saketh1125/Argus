@@ -88,7 +88,7 @@ func TestPRAgentCommitsValidatedMinimalPatch(t *testing.T) {
 				Diff:              tools.UnifiedDiff("func f() int { return 1 }", rewrite, "f.go"),
 			},
 		},
-		Validated: true,
+		Validated: true, ValidationProvider: "test-isolated-sandbox", ValidationProviderLive: true,
 	}
 	setValidatedDigests(iss.Fix.Selected, originalFile)
 
@@ -107,6 +107,54 @@ func TestPRAgentCommitsValidatedMinimalPatch(t *testing.T) {
 	if gh.commits[0].Patch == "" || gh.commits[0].ExpectedContentSHA256 == "" || gh.commits[0].ExpectedPatchedContentSHA256 == "" {
 		t.Fatal("commit must carry the validated patch and source/result digests")
 	}
+	if !strings.Contains(gh.prSpecs[0].Body, "test-isolated-sandbox") || !strings.Contains(gh.prSpecs[0].Body, "(live)") {
+		t.Fatalf("PR body must identify the actual validation provider: %s", gh.prSpecs[0].Body)
+	}
+}
+
+func TestValidatedCommitSpecRejectsMissingOrNonLiveSandboxProvenance(t *testing.T) {
+	for name, configure := range map[string]func(*models.Issue){
+		"missing": func(issue *models.Issue) {
+			issue.ValidationProvider = ""
+			issue.ValidationProviderLive = false
+		},
+		"mock": func(issue *models.Issue) {
+			issue.ValidationProvider = "mock-sandbox"
+			issue.ValidationProviderLive = false
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			issue := validPRIssue()
+			configure(issue)
+			if _, err := validatedCommitSpec(issue); err == nil || !strings.Contains(err.Error(), "live isolated sandbox provenance") {
+				t.Fatalf("expected fail-closed provenance rejection, got %v", err)
+			}
+		})
+	}
+}
+
+func TestPRBodyDoesNotOverstateMockOrMissingValidation(t *testing.T) {
+	pr := NewPRAgent(&captureGitHub{}, &config.Config{}, models.NoopReporter{}, nil, nil)
+	cases := []struct {
+		name  string
+		issue *models.Issue
+		want  string
+	}{
+		{name: "mock", issue: &models.Issue{Validated: true, ValidationProvider: "mock-sandbox"}, want: "non-live provider `mock-sandbox`"},
+		{name: "missing", issue: &models.Issue{Validated: true}, want: "provider provenance is missing"},
+		{name: "failed", issue: &models.Issue{Demoted: true}, want: "not validated"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := pr.prBody(tc.issue, "")
+			if !strings.Contains(body, tc.want) {
+				t.Fatalf("PR body missing truthful validation status %q:\n%s", tc.want, body)
+			}
+			if strings.Contains(body, "Passed configured sandbox validation") {
+				t.Fatalf("PR body made the old unsupported validation claim:\n%s", body)
+			}
+		})
+	}
 }
 
 // A missing source snapshot must not fall back to committing a function as a
@@ -121,7 +169,7 @@ func TestPRAgentRejectsMissingPatchedFileBeforeBranchOrPR(t *testing.T) {
 		BugType: models.BugLogic, Severity: models.SeverityCritical, Confidence: 0.95,
 		Evidence: "x", Explanation: "y",
 		Fix:       &models.Fix{Selected: &models.FixCandidate{RewrittenFunction: rewrite, Diff: "d"}},
-		Validated: true,
+		Validated: true, ValidationProvider: "test-isolated-sandbox", ValidationProviderLive: true,
 	}
 	report, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil)
 	if err != nil {
@@ -184,7 +232,7 @@ func validPRIssue() *models.Issue {
 			PatchedFile:       "package main\n\nfunc f() int { return 2 }\nfunc g() {}\n",
 			OriginalFile:      "package main\n\nfunc f() int { return 1 }\nfunc g() {}\n",
 		}},
-		Validated: true,
+		Validated: true, ValidationProvider: "test-isolated-sandbox", ValidationProviderLive: true,
 	}
 	iss.Fix.Selected.Diff = tools.UnifiedDiff(iss.Fix.OriginalFunction, iss.Fix.Selected.RewrittenFunction, iss.File)
 	setValidatedDigests(iss.Fix.Selected, iss.Fix.Selected.OriginalFile)
@@ -225,7 +273,7 @@ func TestPRBodyIncludesCallGraphContext(t *testing.T) {
 			RewrittenFunction: "func Caller() {}\n", PatchedFile: "package main\nfunc Caller() {}\n",
 			OriginalFile: "package main\nfunc Caller() { return }\n",
 		}},
-		Validated: true,
+		Validated: true, ValidationProvider: "test-isolated-sandbox", ValidationProviderLive: true,
 	}
 	iss.Fix.Selected.Diff = tools.UnifiedDiff(iss.Fix.OriginalFunction, iss.Fix.Selected.RewrittenFunction, iss.File)
 	setValidatedDigests(iss.Fix.Selected, iss.Fix.Selected.OriginalFile)
@@ -254,7 +302,7 @@ func TestSummaryBodyHasTwoTables(t *testing.T) {
 	demoted := &models.Issue{
 		File: "b.go", LineStart: 9, BugType: models.BugSQLInjection,
 		Severity: models.SeverityHigh, Confidence: 0.9, Evidence: "e",
-		Demoted: true, ValidationLog: "syntax check failed: unexpected token",
+		Demoted: true, ValidationLog: "syntax check failed: unexpected token", ValidationProvider: "unavailable",
 	}
 	body := pr.summaryBody([]*models.Issue{med, demoted})
 
@@ -271,5 +319,8 @@ func TestSummaryBodyHasTwoTables(t *testing.T) {
 	}
 	if !strings.Contains(body[unvalidIdx:], "b.go") {
 		t.Error("Unvalidated table should include the demoted High finding (b.go)")
+	}
+	if !strings.Contains(body[unvalidIdx:], "non-live provider unavailable") {
+		t.Error("unvalidated summary should identify the actual provider mode")
 	}
 }

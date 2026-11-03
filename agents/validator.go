@@ -54,8 +54,13 @@ func (v *Validator) Run(ctx context.Context, workdir string, issues []*models.Is
 // validate applies and runs the issue's fix candidates in rank order, marking the
 // issue validated or demoted.
 func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Issue) {
+	// These fields are trusted provenance and must not survive from model input,
+	// an earlier attempt, or a mutated issue.
+	iss.Validated = false
+	iss.ValidationProvider = ""
+	iss.ValidationProviderLive = false
+	iss.ValidationLog = ""
 	if iss.Fix == nil || len(iss.Fix.Candidates) == 0 {
-		iss.Validated = false
 		iss.Demoted = true
 		iss.ValidationLog = "no fix candidate to validate"
 		return
@@ -136,6 +141,12 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 		}
 
 		spec := v.buildSpec(lang, iss.File, patched)
+		if v.sandbox == nil {
+			lastLog = fmt.Sprintf("attempt %d: sandbox is not configured", attempt+1)
+			continue
+		}
+		iss.ValidationProvider = v.sandbox.Name()
+		iss.ValidationProviderLive = v.sandbox.Live()
 		res, serr := v.sandbox.Run(ctx, spec)
 		if serr != nil {
 			lastLog = fmt.Sprintf("attempt %d: sandbox error: %v", attempt+1, serr)

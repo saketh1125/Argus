@@ -167,6 +167,9 @@ func validatedCommitSpec(iss *models.Issue) (tools.CommitSpec, error) {
 	if iss == nil || !iss.Validated || iss.Demoted || iss.Fix == nil || iss.Fix.Selected == nil {
 		return tools.CommitSpec{}, fmt.Errorf("issue has no successful validation")
 	}
+	if iss.ValidationProvider == "" || !iss.ValidationProviderLive {
+		return tools.CommitSpec{}, fmt.Errorf("validated issue lacks live isolated sandbox provenance")
+	}
 	candidate := iss.Fix.Selected
 	if !filepath.IsLocal(iss.File) || iss.File == "." {
 		return tools.CommitSpec{}, fmt.Errorf("target path is not repository-relative")
@@ -212,7 +215,16 @@ func (p *PRAgent) prBody(iss *models.Issue, diff string) string {
 	fmt.Fprintf(&b, "**Type:** %s\n", iss.BugType)
 	fmt.Fprintf(&b, "**Severity:** %s\n", iss.Severity)
 	fmt.Fprintf(&b, "**Confidence:** %.0f%%\n", iss.Confidence*100)
-	b.WriteString("**Validation:** ✅ Passed configured sandbox validation\n\n")
+	switch {
+	case !iss.Validated || iss.Demoted:
+		b.WriteString("**Validation:** not validated; this candidate is not eligible for publication\n\n")
+	case iss.ValidationProvider == "":
+		b.WriteString("**Validation:** provider provenance is missing; validation cannot be confirmed\n\n")
+	case !iss.ValidationProviderLive:
+		fmt.Fprintf(&b, "**Validation:** non-live provider `%s`; this is not isolated live validation\n\n", iss.ValidationProvider)
+	default:
+		fmt.Fprintf(&b, "**Validation:** passed using isolated provider `%s` (live)\n\n", iss.ValidationProvider)
+	}
 	b.WriteString("### Evidence\n")
 	fmt.Fprintf(&b, "File: `%s` | Lines: %d–%d\n\n", iss.File, iss.LineStart, iss.LineEnd)
 	for _, line := range strings.Split(strings.TrimRight(iss.Evidence, "\n"), "\n") {
@@ -311,6 +323,13 @@ func (p *PRAgent) summaryBody(issues []*models.Issue) string {
 			reason := "Fix candidate failed validation"
 			if log := strings.TrimSpace(iss.ValidationLog); log != "" {
 				reason = summaryEscape(firstLine(log))
+			}
+			if iss.ValidationProvider != "" {
+				providerMode := "non-live"
+				if iss.ValidationProviderLive {
+					providerMode = "live"
+				}
+				reason = summaryEscape(providerMode + " provider " + iss.ValidationProvider + ": " + reason)
 			}
 			fmt.Fprintf(&b, "| %s | `%s` | %d–%d | %s | %s |\n",
 				severityGlyph(iss.Severity), iss.File, iss.LineStart, iss.LineEnd,

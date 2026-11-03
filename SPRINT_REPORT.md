@@ -53,6 +53,14 @@ P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effe
 - Live sandbox/publication tests — NOT RUN. Windows symlink regression — SKIPPED locally; Linux CI run [#39](https://github.com/saketh1125/Argus/actions/runs/41660865916) passed the mandatory symlink test.
 - Continuation commits `8a88254`, `6c88dbc`, and `f22c54e` are pushed. GitHub Actions run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed all configured CI jobs on `f22c54e`.
 - Documentation checkpoint `d9b82a2` is pushed; GitHub Actions run [#45](https://github.com/saketh1125/Argus/actions/runs/41662912698) passed all configured checks. PR #2 remains open, draft and unmerged.
+- Documentation checkpoint `e5c67fa` is pushed; GitHub Actions run [#47](https://github.com/saketh1125/Argus/actions/runs/41663259463) passed all configured checks.
+
+### Validation provenance correction
+
+- **Medium — generated PR text overstated validation.** PR bodies hardcoded a generic sandbox-pass claim and issues did not identify the sandbox that produced a result. The validator now clears model-provided validation metadata, records the actual attempted provider and its live/mock mode, and successful-only patch eligibility requires live isolated-provider provenance. PR and failure-summary text show actual provider state. Local tests pass; CI for this change is pending push.
+- E2B client research: the [official E2B project quickstart](https://github.com/e2b-dev/E2B#run-your-first-sandbox) documents JavaScript/Python SDKs; the Go SDK examined during this audit explicitly describes itself as [unofficial and community-maintained](https://github.com/eric642/e2b-go-sdk#e2b-go-sdk). No third-party runtime dependency was added without review. The Go client choice remains open, and live verification still requires explicit authorization and `E2B_API_KEY`.
+- Focused provenance and truthful-reporting tests — PASS.
+- Full `go test ./...` — PASS; `go vet ./...` — PASS; `go build ./...` — exit 0 with the restricted module stat-cache warning; `git diff --check` — PASS with Windows line-ending warnings.
 
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`

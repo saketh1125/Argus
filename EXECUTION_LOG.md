@@ -77,6 +77,15 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - GitHub Actions [#45](https://github.com/saketh1125/Argus/actions/runs/41662912698) completed successfully on `d9b82a2`, passing formatting, tests, vet, race tests, native build, and Windows AMD64 build.
 - Phase 0 remains in progress: real sandbox isolation and lifecycle, exact-patch approval, fork publication, and additional interruption/persistence failure coverage are not complete.
 
+## 2026-11-03 — Validation provider provenance
+
+- Fixed a reporting gap where PR text asserted sandbox validation without naming the provider. `Issue` now carries validator-stamped provider and live/mock metadata; each validation run clears model-provided claims, records the actual attempted adapter, and retains the result only from the sandbox outcome.
+- Publication patch preparation now rejects missing or non-live sandbox provenance. PR bodies and failed-validation summaries identify the actual provider/mode and do not claim mock or missing validation passed.
+- Added regressions for forged provider metadata, mock/missing publication provenance, accurate PR wording, and failure-summary provider reporting.
+- Focused regressions — PASS; full `go test ./...` — PASS; `go vet ./...` — PASS; `go build ./...` — exit 0 with restricted module stat-cache warning; `git diff --check` — PASS.
+- CI and push for this implementation are pending. No live credentials or publication were used; E2B remains disabled.
+- Reviewed current E2B SDK sources: the [official project quickstart](https://github.com/e2b-dev/E2B#run-your-first-sandbox) lists JavaScript/Python; the Go SDK located identifies itself as [unofficial and community-maintained](https://github.com/eric642/e2b-go-sdk#e2b-go-sdk). No package was added because this provider choice needs review.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

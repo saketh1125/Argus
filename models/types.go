@@ -102,6 +102,10 @@ type Issue struct {
 	// Validation results, set by the validator.
 	Validated     bool   `json:"validated"`
 	ValidationLog string `json:"validation_log,omitempty"`
+	// Validation provider provenance is stamped by the validator when it starts
+	// a sandbox attempt; it is never accepted from model-generated input.
+	ValidationProvider     string `json:"validation_provider,omitempty"`
+	ValidationProviderLive bool   `json:"validation_provider_live,omitempty"`
 
 	// Set true if this issue could not be validated / fixed and should be
 	// reported in the summary issue instead of a PR.

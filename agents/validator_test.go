@@ -59,6 +59,9 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	if !got.Validated {
 		t.Fatal("expected Validated=true")
 	}
+	if got.ValidationProvider != "pass-sandbox" || got.ValidationProviderLive {
+		t.Fatalf("validator must record the actual non-live provider: name=%q live=%v", got.ValidationProvider, got.ValidationProviderLive)
+	}
 	if got.Fix == nil || got.Fix.Selected == nil {
 		t.Fatal("expected a selected candidate")
 	}
@@ -169,6 +172,26 @@ func TestValidatorRejectsResultAfterContextCancellation(t *testing.T) {
 	iss := validateSingleGoCandidate(t, resultSandbox{result: validResult}, ctx)
 	if iss.Validated || !iss.Demoted {
 		t.Fatalf("cancelled validation must not accept a success result: validated=%v demoted=%v", iss.Validated, iss.Demoted)
+	}
+}
+
+func TestValidatorClearsForgedProviderProvenanceWhenSandboxFails(t *testing.T) {
+	const original = "package main\nfunc f() int { return 1 }\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f", Validated: true,
+		ValidationProvider: "model-claimed-live-sandbox", ValidationProviderLive: true,
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 1 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
+	}
+	v := NewValidator(resultSandbox{result: &services.SandboxResult{Success: false}}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	if _, err := v.Run(context.Background(), dir, []*models.Issue{iss}); err != nil {
+		t.Fatal(err)
+	}
+	if iss.ValidationProvider != "result-fixture" || iss.ValidationProviderLive || iss.Validated || !iss.Demoted {
+		t.Fatalf("failed validation retained forged provenance or lost the actual attempted provider: %+v", iss)
 	}
 }
 
