@@ -2,10 +2,13 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
@@ -59,14 +62,58 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 		return
 	}
 
+	absPath, pathErr := safeRepoFile(workdir, iss.File)
+	if pathErr != nil {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = "refused unsafe source path: " + pathErr.Error()
+		return
+	}
 	lang := v.parser.Language(filepath.Ext(iss.File))
-	absPath := filepath.Join(workdir, iss.File)
+	if len(agtSyntaxCmd(lang, iss.File)) == 0 {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = fmt.Sprintf("no configured syntax validator for language %q", lang)
+		return
+	}
 	original, rerr := os.ReadFile(absPath)
 	if rerr != nil {
-		// Without on-disk content we can only validate the rewritten function in
-		// isolation. Fall back to using the rewrite as the file content.
 		v.rep.Log("validator: read %s: %v", iss.File, rerr)
-		original = nil
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = fmt.Sprintf("source file unavailable; refusing isolated rewrite validation: %v", rerr)
+		return
+	}
+	if len(original) > 4<<20 || !utf8.Valid(original) || strings.IndexByte(string(original), 0) >= 0 {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = "source file is binary or exceeds the patch safety limit"
+		return
+	}
+	if iss.FunctionName == "" {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = "source function name missing; refusing ambiguous patch"
+		return
+	}
+	sourceParsed, parseErr := v.parser.Parse(iss.File, string(original))
+	if parseErr != nil || sourceParsed == nil {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = "source could not be parsed; refusing patch"
+		return
+	}
+	var sourceMatches []models.Signature
+	for _, sig := range sourceParsed.Signatures {
+		if sig.Name == iss.FunctionName && sig.Kind != "class" {
+			sourceMatches = append(sourceMatches, sig)
+		}
+	}
+	if len(sourceMatches) != 1 || normalizeFunctionSource(sourceMatches[0].Body) != normalizeFunctionSource(iss.Fix.OriginalFunction) {
+		iss.Validated = false
+		iss.Demoted = true
+		iss.ValidationLog = fmt.Sprintf("source target %q is missing, ambiguous, or stale", iss.FunctionName)
+		return
 	}
 
 	// Try the top candidate, then the next-ranked one on failure (one retry).
@@ -79,6 +126,10 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 	var lastLog string
 	for attempt := 0; attempt < maxTry; attempt++ {
 		cand := cands[attempt]
+		if err := v.verifyRewrite(iss.File, iss.FunctionName, cand.RewrittenFunction); err != nil {
+			lastLog = fmt.Sprintf("attempt %d: rewrite rejected: %v", attempt+1, err)
+			continue
+		}
 		patched, perr := v.patchedContent(string(original), iss.Fix.OriginalFunction, cand.RewrittenFunction)
 		if perr != nil {
 			lastLog = fmt.Sprintf("attempt %d: apply failed: %v", attempt+1, perr)
@@ -92,9 +143,13 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 		if res != nil && res.Success {
-			// Carry the validated full-file content forward so the PR agent can
-			// commit a single-function edit instead of replacing the whole file.
+			originalSum := sha256.Sum256(original)
+			patchedSum := sha256.Sum256([]byte(patched))
 			cand.PatchedFile = patched
+			cand.OriginalFile = string(original)
+			cand.OriginalFileSHA256 = hex.EncodeToString(originalSum[:])
+			cand.PatchedFileSHA256 = hex.EncodeToString(patchedSum[:])
+			cand.Diff = tools.UnifiedDiff(iss.Fix.OriginalFunction, cand.RewrittenFunction, iss.File)
 			selected := cand
 			iss.Fix.Selected = &selected
 			iss.Validated = true
@@ -112,25 +167,70 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 		lastLog = fmt.Sprintf("attempt %d: syntax/test check failed: %s", attempt+1, log)
 	}
 
+	iss.Fix.Selected = nil
 	iss.Validated = false
 	iss.Demoted = true
 	iss.ValidationLog = lastLog
 }
 
-// patchedContent produces the patched file content. When the original file
-// content is available it applies the function rewrite in place; otherwise it
-// validates the rewritten function alone.
+func normalizeFunctionSource(source string) string {
+	source = strings.ReplaceAll(source, "\r\n", "\n")
+	source = strings.ReplaceAll(source, "\r", "\n")
+	return strings.TrimRight(source, "\n")
+}
+
+// patchedContent produces a complete file by a unique exact function edit.
+// It fails closed: no isolated rewrite fallback is allowed into PR validation.
 func (v *Validator) patchedContent(original, origFunc, rewrite string) (string, error) {
 	if original == "" || origFunc == "" {
-		return rewrite, nil
+		return "", fmt.Errorf("original file/function is empty")
 	}
 	patched, err := tools.ApplyFunctionRewrite(original, origFunc, rewrite)
 	if err != nil {
-		// The original function text wasn't found verbatim (e.g. sanitization
-		// drift). Fall back to validating the rewrite in isolation.
-		return rewrite, nil
+		return "", err
 	}
 	return patched, nil
+}
+
+func (v *Validator) verifyRewrite(file, functionName, rewrite string) error {
+	parsed, err := v.parser.Parse(file, rewrite)
+	if err != nil {
+		return fmt.Errorf("cannot parse replacement: %w", err)
+	}
+	matches := 0
+	for _, sig := range parsed.Signatures {
+		if sig.Name == functionName && sig.Kind != "class" {
+			matches++
+		}
+	}
+	if matches != 1 {
+		return fmt.Errorf("replacement must contain exactly one %q declaration; found %d", functionName, matches)
+	}
+	return nil
+}
+
+func safeRepoFile(root, rel string) (string, error) {
+	if !filepath.IsLocal(rel) || rel == "." {
+		return "", fmt.Errorf("path must be repository-relative")
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	candidate := filepath.Join(rootReal, filepath.Clean(rel))
+	targetReal, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", fmt.Errorf("resolve source file: %w", err)
+	}
+	inside, err := filepath.Rel(rootReal, targetReal)
+	if err != nil || inside == ".." || filepath.IsAbs(inside) || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("source path resolves outside repository")
+	}
+	return targetReal, nil
 }
 
 // buildSpec assembles a SandboxSpec: write the patched file, run the syntax check,
@@ -140,10 +240,14 @@ func (v *Validator) buildSpec(ctx context.Context, lang, relFile, patched, rewri
 	commands := agtSyntaxCmd(lang, relFile)
 
 	// If there are no obvious tests, try to generate a minimal one.
-	if test, ok := v.maybeGenTest(ctx, lang, relFile, rewrite); ok {
-		files[test.Filename] = test.TestCode
-		if test.RunCmd != "" {
-			commands = append(commands, test.RunCmd)
+	// Generated test commands execute repository code. Only invoke them inside
+	// the isolated remote sandbox; the host-local executor remains syntax-only.
+	if v.sandbox.Live() {
+		if test, ok := v.maybeGenTest(ctx, lang, relFile, rewrite); ok {
+			files[test.Filename] = test.TestCode
+			if test.RunCmd != "" {
+				commands = append(commands, test.RunCmd)
+			}
 		}
 	}
 

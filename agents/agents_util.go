@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -80,6 +81,9 @@ func agtSyntaxCmd(lang, file string) []string {
 	q := agtShellQuote(file)
 	switch lang {
 	case "python":
+		if runtime.GOOS == "windows" {
+			return []string{"python -m py_compile " + q}
+		}
 		return []string{"python3 -m py_compile " + q}
 	case "javascript", "typescript":
 		return []string{"node --check " + q}
@@ -90,13 +94,17 @@ func agtSyntaxCmd(lang, file string) []string {
 	case "php":
 		return []string{"php -l " + q}
 	default:
-		// Best-effort: nothing to check, treat as a trivially-passing command.
-		return []string{"true"}
+		// No syntax command means the validator must demote this language instead
+		// of treating a no-op as proof that a fix is safe.
+		return nil
 	}
 }
 
 // agtShellQuote single-quotes a path for safe embedding in a shell command.
 func agtShellQuote(s string) string {
+	if runtime.GOOS == "windows" {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 

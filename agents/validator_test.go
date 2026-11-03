@@ -75,4 +75,107 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	if !strings.Contains(got.Fix.Selected.PatchedFile, "func g()") {
 		t.Errorf("patched file must preserve sibling code (func g); got %q", got.Fix.Selected.PatchedFile)
 	}
+	if got.Fix.Selected.OriginalFileSHA256 == "" || got.Fix.Selected.PatchedFileSHA256 == "" {
+		t.Fatal("validated patch must carry source and result hashes")
+	}
+	if got.Fix.Selected.Diff == "" || !strings.Contains(got.Fix.Selected.Diff, "return 1") || !strings.Contains(got.Fix.Selected.Diff, "return 2") {
+		t.Fatalf("expected mechanically generated function diff, got %q", got.Fix.Selected.Diff)
+	}
+}
+
+func TestValidatorFailsClosedWhenSourceFileMissing(t *testing.T) {
+	sandbox := &recordSandbox{}
+	iss := &models.Issue{
+		File: "missing.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() {}"}}},
+	}
+	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), t.TempDir(), []*models.Issue{iss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iss.Validated || !iss.Demoted || len(sandbox.specs) != 0 {
+		t.Fatalf("missing source must fail before sandbox validation: validated=%v demoted=%v sandbox_calls=%d", iss.Validated, iss.Demoted, len(sandbox.specs))
+	}
+}
+
+func TestValidatorRejectsStaleOriginalFunctionBeforeSandbox(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte("package main\nfunc f() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sandbox := &recordSandbox{}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 9 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
+	}
+	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iss.Validated || !iss.Demoted || len(sandbox.specs) != 0 {
+		t.Fatalf("stale source must fail before sandbox: valid=%v demoted=%v calls=%d", iss.Validated, iss.Demoted, len(sandbox.specs))
+	}
+}
+
+func TestLocalSandboxValidationDoesNotRunGeneratedTestCommands(t *testing.T) {
+	original := "package main\nfunc f() {}\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	llm := &countingLLM{}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() {}"}}},
+	}
+	v := NewValidator(&recordSandbox{}, llm, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if llm.calls != 0 {
+		t.Fatalf("local sandbox must not call testgen; calls=%d", llm.calls)
+	}
+}
+
+type countingLLM struct{ calls int }
+
+func (llm *countingLLM) Complete(context.Context, services.CompletionRequest) (*services.CompletionResponse, error) {
+	llm.calls++
+	return &services.CompletionResponse{Text: `{"filename":"../../outside.go","test_code":"bad","run_cmd":"echo unsafe"}`}, nil
+}
+func (*countingLLM) Name() string { return "counting" }
+func (*countingLLM) Live() bool   { return false }
+
+type recordSandbox struct{ specs []services.SandboxSpec }
+
+func (s *recordSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
+	s.specs = append(s.specs, spec)
+	return &services.SandboxResult{Success: true}, nil
+}
+func (*recordSandbox) Name() string { return "record" }
+func (*recordSandbox) Live() bool   { return false }
+
+func TestSafeRepoFileAcceptsNativeWindowsPathAndRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	rel := filepath.Join("src", "nested", "main.go")
+	target := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := safeRepoFile(root, rel)
+	if err != nil {
+		t.Fatalf("native relative path %q rejected: %v", rel, err)
+	}
+	if got != target {
+		t.Fatalf("safe path = %q, want %q", got, target)
+	}
+	if _, err := safeRepoFile(root, filepath.Join("..", "outside.go")); err == nil {
+		t.Fatal("parent traversal path must be rejected")
+	}
 }

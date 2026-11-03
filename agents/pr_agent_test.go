@@ -2,6 +2,9 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 
@@ -13,9 +16,11 @@ import (
 // captureGitHub is a GitHubClient that records every CommitFile content and the
 // last PR body, so tests can assert exactly what the PR agent commits and renders.
 type captureGitHub struct {
-	commits []tools.CommitSpec
-	prSpecs []tools.PRSpec
-	issues  int
+	commits   []tools.CommitSpec
+	prSpecs   []tools.PRSpec
+	issues    int
+	branches  int
+	commitErr error
 }
 
 func (c *captureGitHub) ParseURL(string) (string, string, error) { return "o", "r", nil }
@@ -25,12 +30,13 @@ func (c *captureGitHub) Clone(context.Context, string, string) (string, error) {
 func (c *captureGitHub) DefaultBranch(context.Context, string, string) (string, error) {
 	return "main", nil
 }
-func (c *captureGitHub) CreateBranch(context.Context, string, string, string, string) error {
+func (c *captureGitHub) CreateBranch(context.Context, string, string, string, string, string) error {
+	c.branches++
 	return nil
 }
 func (c *captureGitHub) CommitFile(_ context.Context, _, _ string, spec tools.CommitSpec) error {
 	c.commits = append(c.commits, spec)
-	return nil
+	return c.commitErr
 }
 func (c *captureGitHub) CreatePR(_ context.Context, _, _ string, spec tools.PRSpec) (int, string, error) {
 	c.prSpecs = append(c.prSpecs, spec)
@@ -49,10 +55,11 @@ var _ tools.GitHubClient = (*captureGitHub)(nil)
 // overwrite bug: when the validator captured a full patched file, the PR agent
 // MUST commit that (a single-function edit) and never just the rewritten
 // function (which would replace the whole file via the GitHub Contents API).
-func TestPRAgentCommitsFullPatchedFile(t *testing.T) {
+func TestPRAgentCommitsValidatedMinimalPatch(t *testing.T) {
 	gh := &captureGitHub{}
 	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
 
+	originalFile := "package main\n\nfunc f() int { return 1 }\nfunc g() {}\n"
 	fullFile := "package main\n\nfunc f() int { return 2 }\nfunc g() {}\n"
 	rewrite := "func f() int { return 2 }\n"
 	iss := &models.Issue{
@@ -64,11 +71,13 @@ func TestPRAgentCommitsFullPatchedFile(t *testing.T) {
 			Selected: &models.FixCandidate{
 				RewrittenFunction: rewrite,
 				PatchedFile:       fullFile,
-				Diff:              "--- a/f.go\n+++ b/f.go\n",
+				OriginalFile:      originalFile,
+				Diff:              tools.UnifiedDiff("func f() int { return 1 }", rewrite, "f.go"),
 			},
 		},
 		Validated: true,
 	}
+	setValidatedDigests(iss.Fix.Selected, originalFile)
 
 	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -82,12 +91,14 @@ func TestPRAgentCommitsFullPatchedFile(t *testing.T) {
 	if gh.commits[0].Content == rewrite {
 		t.Error("PR agent committed only the rewritten function — this overwrites the whole file in live mode")
 	}
+	if gh.commits[0].Patch == "" || gh.commits[0].ExpectedContentSHA256 == "" || gh.commits[0].ExpectedPatchedContentSHA256 == "" {
+		t.Fatal("commit must carry the validated patch and source/result digests")
+	}
 }
 
-// TestPRAgentFallsBackToRewriteWhenNoPatchedFile covers the isolated-validation
-// path: when the validator had no on-disk file to patch, PatchedFile is empty
-// and the PR agent falls back to the rewritten function.
-func TestPRAgentFallsBackToRewriteWhenNoPatchedFile(t *testing.T) {
+// A missing source snapshot must not fall back to committing a function as a
+// whole file, and must fail before creating any branch or PR.
+func TestPRAgentRejectsMissingPatchedFileBeforeBranchOrPR(t *testing.T) {
 	gh := &captureGitHub{}
 	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
 
@@ -96,15 +107,83 @@ func TestPRAgentFallsBackToRewriteWhenNoPatchedFile(t *testing.T) {
 		File: "f.go", LineStart: 3,
 		BugType: models.BugLogic, Severity: models.SeverityCritical, Confidence: 0.95,
 		Evidence: "x", Explanation: "y",
-		Fix:      &models.Fix{Selected: &models.FixCandidate{RewrittenFunction: rewrite, Diff: "d"}},
+		Fix:       &models.Fix{Selected: &models.FixCandidate{RewrittenFunction: rewrite, Diff: "d"}},
 		Validated: true,
 	}
-	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil); err != nil {
+	report, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(gh.commits) != 1 || gh.commits[0].Content != rewrite {
-		t.Fatalf("fallback should commit rewrite, got %q", gh.commits[0].Content)
+	if gh.branches != 0 || len(gh.commits) != 0 || len(gh.prSpecs) != 0 || len(report.PRsRaised) != 0 {
+		t.Fatalf("unsafe candidate caused side effects: branches=%d commits=%d PRs=%d", gh.branches, len(gh.commits), len(gh.prSpecs))
 	}
+}
+
+func TestPRAgentFailedValidationCannotCreateBranchOrPR(t *testing.T) {
+	gh := &captureGitHub{}
+	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
+	iss := validPRIssue()
+	iss.Validated = false
+	iss.Demoted = true
+	report, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gh.branches != 0 || len(gh.commits) != 0 || len(gh.prSpecs) != 0 || len(report.PRsRaised) != 0 {
+		t.Fatalf("failed validation caused PR side effects: branches=%d commits=%d PRs=%d", gh.branches, len(gh.commits), len(gh.prSpecs))
+	}
+}
+
+func TestValidatedCommitSpecRejectsTamperedContent(t *testing.T) {
+	iss := validPRIssue()
+	iss.Fix.Selected.PatchedFile += "// later mutation\n"
+	if _, err := validatedCommitSpec(iss); err == nil || !strings.Contains(err.Error(), "provenance") {
+		t.Fatalf("expected mutated result to fail provenance replay, got %v", err)
+	}
+}
+
+func TestValidatedCommitSpecRejectsUnexpectedSiblingEditsEvenWithFreshDigest(t *testing.T) {
+	iss := validPRIssue()
+	iss.Fix.Selected.PatchedFile = strings.Replace(iss.Fix.Selected.PatchedFile, "func g() {}", "func g() { changed() }", 1)
+	setValidatedDigests(iss.Fix.Selected, iss.Fix.Selected.OriginalFile)
+	if _, err := validatedCommitSpec(iss); err == nil || !strings.Contains(err.Error(), "provenance") {
+		t.Fatalf("expected unrelated change to fail provenance replay, got %v", err)
+	}
+}
+
+func TestPRAgentCommitConflictCannotPublishPR(t *testing.T) {
+	gh := &captureGitHub{commitErr: errors.New("branch source changed since validation")}
+	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
+	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{validPRIssue()}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gh.branches != 1 || len(gh.commits) != 1 || len(gh.prSpecs) != 0 {
+		t.Fatalf("commit conflict must stop before PR publication: branches=%d commits=%d PRs=%d", gh.branches, len(gh.commits), len(gh.prSpecs))
+	}
+}
+
+func validPRIssue() *models.Issue {
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f", LineStart: 3,
+		BugType: models.BugLogic, Severity: models.SeverityHigh, Confidence: .95,
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 1 }", Selected: &models.FixCandidate{
+			RewrittenFunction: "func f() int { return 2 }\n",
+			PatchedFile:       "package main\n\nfunc f() int { return 2 }\nfunc g() {}\n",
+			OriginalFile:      "package main\n\nfunc f() int { return 1 }\nfunc g() {}\n",
+		}},
+		Validated: true,
+	}
+	iss.Fix.Selected.Diff = tools.UnifiedDiff(iss.Fix.OriginalFunction, iss.Fix.Selected.RewrittenFunction, iss.File)
+	setValidatedDigests(iss.Fix.Selected, iss.Fix.Selected.OriginalFile)
+	return iss
+}
+
+func setValidatedDigests(candidate *models.FixCandidate, original string) {
+	candidate.OriginalFile = original
+	originalHash := sha256.Sum256([]byte(original))
+	patchedHash := sha256.Sum256([]byte(candidate.PatchedFile))
+	candidate.OriginalFileSHA256 = hex.EncodeToString(originalHash[:])
+	candidate.PatchedFileSHA256 = hex.EncodeToString(patchedHash[:])
 }
 
 // TestPRBodyIncludesCallGraphContext verifies the §11 "Call Graph Context"
@@ -129,11 +208,14 @@ func TestPRBodyIncludesCallGraphContext(t *testing.T) {
 		File: "caller.go", FunctionName: "Caller", LineStart: 1,
 		BugType: models.BugLogic, Severity: models.SeverityCritical, Confidence: 0.95,
 		Evidence: "x", Explanation: "y",
-		Fix: &models.Fix{Selected: &models.FixCandidate{
-			RewrittenFunction: "func Caller() {}", Diff: "d", PatchedFile: "func Caller() {}",
+		Fix: &models.Fix{OriginalFunction: "func Caller() { return }", Selected: &models.FixCandidate{
+			RewrittenFunction: "func Caller() {}\n", PatchedFile: "package main\nfunc Caller() {}\n",
+			OriginalFile: "package main\nfunc Caller() { return }\n",
 		}},
 		Validated: true,
 	}
+	iss.Fix.Selected.Diff = tools.UnifiedDiff(iss.Fix.OriginalFunction, iss.Fix.Selected.RewrittenFunction, iss.File)
+	setValidatedDigests(iss.Fix.Selected, iss.Fix.Selected.OriginalFile)
 	if _, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{iss}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

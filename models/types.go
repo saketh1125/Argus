@@ -124,12 +124,13 @@ type FixCandidate struct {
 	Temperature       float64 `json:"temperature"`
 	Rationale         string  `json:"rationale,omitempty"`
 
-	// PatchedFile holds the FULL file content with this rewrite applied, captured
-	// by the validator at validation time. It is what the PR agent commits so a
-	// PR edits only the target function rather than replacing the whole file.
-	// Empty when the candidate was never validated (e.g. the file could not be
-	// read from disk); callers then fall back to RewrittenFunction.
-	PatchedFile string `json:"patched_file,omitempty"`
+	// PatchedFile is the full source file after the validator applies the bounded
+	// single-function edit. GitHub's Contents API requires full file content; the
+	// adapter checks OriginalFileSHA256 against the branch before updating it.
+	PatchedFile        string `json:"patched_file,omitempty"`
+	OriginalFile       string `json:"-"` // in-memory source snapshot used to replay and verify provenance
+	OriginalFileSHA256 string `json:"original_file_sha256,omitempty"`
+	PatchedFileSHA256  string `json:"patched_file_sha256,omitempty"`
 }
 
 // Fix bundles the candidate rewrites for an issue and records which one was

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -34,8 +35,8 @@ func newLocalSandbox() *localSandbox { return &localSandbox{} }
 
 // Run materializes spec.Files in a temp directory, runs spec.Commands in order
 // under a spec.TimeoutSec-second deadline, and returns the combined result.
-// Success is true when every command exited 0 (skipped commands count as
-// success). The temp directory is always removed.
+// Success is true only when every configured validation command runs and exits
+// 0. Missing tools fail closed. The temp directory is always removed.
 func (l *localSandbox) Run(ctx context.Context, spec SandboxSpec) (*SandboxResult, error) {
 	tmp, err := os.MkdirTemp("", "codesentinel-sbx-*")
 	if err != nil {
@@ -45,6 +46,9 @@ func (l *localSandbox) Run(ctx context.Context, spec SandboxSpec) (*SandboxResul
 
 	// Write files, creating parent directories as needed.
 	for rel, content := range spec.Files {
+		if !filepath.IsLocal(rel) || rel == "." {
+			return nil, fmt.Errorf("local-sandbox: refusing non-local file path %q", rel)
+		}
 		dst := filepath.Join(tmp, filepath.Clean(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return nil, fmt.Errorf("local-sandbox: mkdir for %s: %w", rel, err)
@@ -69,15 +73,31 @@ func (l *localSandbox) Run(ctx context.Context, spec SandboxSpec) (*SandboxResul
 		if len(fields) == 0 {
 			continue
 		}
-		// Probe the interpreter/binary; skip (don't fail) if missing.
+		// A missing validator cannot count as a successful validation.
 		if _, lookErr := exec.LookPath(fields[0]); lookErr != nil {
-			fmt.Fprintf(&logs, "SKIP (%s not found): %s\n", fields[0], cmdline)
-			continue
+			res.Success = false
+			res.ExitCode = 127
+			fmt.Fprintf(&logs, "FAILED (validator %s not found): %s\n", fields[0], cmdline)
+			res.Logs = logs.String()
+			return res, nil
 		}
 
-		// Execute through a shell so quoting/redirection in the command string
-		// behaves as written (the probe above already confirmed fields[0] exists).
-		cmd := exec.CommandContext(runCtx, "sh", "-c", cmdline)
+		// Execute through the platform shell so generated, safely quoted
+		// syntax-check commands work on both Linux containers and native Windows.
+		var cmd *exec.Cmd
+		if runtime.GOOS == "windows" {
+			shell, shellErr := exec.LookPath("powershell.exe")
+			if shellErr != nil {
+				res.Success = false
+				res.ExitCode = 127
+				fmt.Fprintf(&logs, "FAILED (PowerShell not found): %s\n", cmdline)
+				res.Logs = logs.String()
+				return res, nil
+			}
+			cmd = exec.CommandContext(runCtx, shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", cmdline)
+		} else {
+			cmd = exec.CommandContext(runCtx, "sh", "-c", cmdline)
+		}
 		cmd.Dir = tmp
 		var cout, cerr bytes.Buffer
 		cmd.Stdout = &cout

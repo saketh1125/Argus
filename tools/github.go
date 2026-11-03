@@ -7,11 +7,14 @@ package tools
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,15 +34,31 @@ const sampleRepoPath = "testdata/sample-repo"
 // githubURLRe extracts owner/repo from a GitHub URL. The repo group is
 // non-greedy and stops before an optional ".git" suffix so both
 // "…/repo" and "…/repo.git" yield "repo".
-var githubURLRe = regexp.MustCompile(`github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$`)
+var githubPathPartRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 // parseGitHubURL is the shared, pure URL parser used by both adapters.
-func parseGitHubURL(url string) (owner, repo string, err error) {
-	m := githubURLRe.FindStringSubmatch(strings.TrimSpace(url))
-	if m == nil {
-		return "", "", fmt.Errorf("parse url: %q is not a recognized GitHub URL", url)
+func parseGitHubURL(rawURL string) (owner, repo string, err error) {
+	value := strings.TrimSpace(rawURL)
+	var path string
+	if strings.HasPrefix(value, "git@github.com:") {
+		path = strings.TrimPrefix(value, "git@github.com:")
+	} else {
+		u, parseErr := url.Parse(value)
+		if parseErr != nil || u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "github.com") || u.Port() != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return "", "", fmt.Errorf("parse url: %q must be a canonical HTTPS GitHub repository URL", rawURL)
+		}
+		path = strings.TrimPrefix(u.Path, "/")
 	}
-	return m[1], m[2], nil
+	path = strings.TrimSuffix(path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("parse url: %q is not a recognized GitHub URL", rawURL)
+	}
+	owner, repo = parts[0], strings.TrimSuffix(parts[1], ".git")
+	if !githubPathPartRe.MatchString(owner) || !githubPathPartRe.MatchString(repo) || owner == "." || owner == ".." || repo == "." || repo == ".." {
+		return "", "", fmt.Errorf("parse url: %q contains an invalid repository path", rawURL)
+	}
+	return owner, repo, nil
 }
 
 // copyDir recursively copies the directory tree at src into dst, creating dst
@@ -107,13 +126,21 @@ func isLocalDir(path string) bool {
 // for cloning. It is selected only when a token is configured and mock mode is
 // off.
 type githubREST struct {
-	token string
-	http  *http.Client
+	token   string
+	http    *http.Client
+	baseURL string
 }
 
 // newGitHubREST builds a real client bound to the given token.
 func newGitHubREST(token string) *githubREST {
 	return &githubREST{token: token, http: &http.Client{}}
+}
+
+func (g *githubREST) apiRoot() string {
+	if g.baseURL != "" {
+		return strings.TrimRight(g.baseURL, "/")
+	}
+	return apiBase
 }
 
 func (g *githubREST) Name() string { return "github" }
@@ -234,7 +261,10 @@ func (g *githubREST) DefaultBranch(ctx context.Context, owner, repo string) (str
 	return out.DefaultBranch, nil
 }
 
-func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name string) error {
+func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name, expectedBaseSHA string) error {
+	if expectedBaseSHA == "" {
+		return fmt.Errorf("create branch: analyzed base commit SHA is required")
+	}
 	// Resolve the base branch's tip SHA. The ref response nests it under
 	// .object.sha.
 	var ref struct {
@@ -242,13 +272,16 @@ func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name s
 			SHA string `json:"sha"`
 		} `json:"object"`
 	}
-	refURL := fmt.Sprintf("%s/repos/%s/%s/git/ref/heads/%s", apiBase, owner, repo, base)
+	refURL := fmt.Sprintf("%s/repos/%s/%s/git/ref/heads/%s", g.apiRoot(), owner, repo, escapeGitHubPath(base))
 	if err := g.do(ctx, http.MethodGet, refURL, nil, &ref); err != nil {
 		return fmt.Errorf("create branch: resolve base %q: %w", base, err)
 	}
+	if ref.Object.SHA == "" || ref.Object.SHA != expectedBaseSHA {
+		return fmt.Errorf("create branch: base %q changed since repository scan", base)
+	}
 	body := map[string]string{
 		"ref": "refs/heads/" + name,
-		"sha": ref.Object.SHA,
+		"sha": expectedBaseSHA,
 	}
 	postURL := fmt.Sprintf("%s/repos/%s/%s/git/refs", apiBase, owner, repo)
 	if err := g.do(ctx, http.MethodPost, postURL, body, nil); err != nil {
@@ -258,15 +291,40 @@ func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name s
 }
 
 func (g *githubREST) CommitFile(ctx context.Context, owner, repo string, spec CommitSpec) error {
-	contentsURL := fmt.Sprintf("%s/repos/%s/%s/contents/%s", apiBase, owner, repo, spec.Path)
+	if !filepath.IsLocal(spec.Path) || spec.Path == "." {
+		return fmt.Errorf("commit file %q: path must be repository-relative", spec.Path)
+	}
+	if len(spec.ExpectedContentSHA256) != sha256.Size*2 || len(spec.ExpectedPatchedContentSHA256) != sha256.Size*2 || spec.Patch == "" {
+		return fmt.Errorf("commit file %q: validated patch and source/result digests are required", spec.Path)
+	}
+	patchedSum := sha256.Sum256([]byte(spec.Content))
+	if hex.EncodeToString(patchedSum[:]) != spec.ExpectedPatchedContentSHA256 {
+		return fmt.Errorf("commit file %q: patched content digest does not match validated result", spec.Path)
+	}
+	contentsURL := fmt.Sprintf("%s/repos/%s/%s/contents/%s", g.apiRoot(), owner, repo, escapeGitHubPath(filepath.ToSlash(spec.Path)))
 
 	// Look up the existing blob SHA (required by the API to update a file).
 	var existing struct {
-		SHA string `json:"sha"`
+		SHA      string `json:"sha"`
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
 	}
 	getURL := contentsURL + "?ref=" + spec.Branch
-	// A 404 here simply means the file is new; ignore the error in that case.
-	_ = g.do(ctx, http.MethodGet, getURL, nil, &existing)
+	if err := g.do(ctx, http.MethodGet, getURL, nil, &existing); err != nil {
+		return fmt.Errorf("commit file %q: read branch source: %w", spec.Path, err)
+	}
+	if existing.SHA == "" || existing.Encoding != "base64" {
+		return fmt.Errorf("commit file %q: branch source is missing or not base64 encoded", spec.Path)
+	}
+	encodedContent := strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(existing.Content))
+	remoteContent, err := base64.StdEncoding.DecodeString(encodedContent)
+	if err != nil {
+		return fmt.Errorf("commit file %q: decode branch source: %w", spec.Path, err)
+	}
+	remoteSum := sha256.Sum256(remoteContent)
+	if hex.EncodeToString(remoteSum[:]) != spec.ExpectedContentSHA256 {
+		return fmt.Errorf("commit file %q: branch source changed since validation; refusing stale patch", spec.Path)
+	}
 
 	body := map[string]any{
 		"message": spec.Message,
@@ -282,7 +340,30 @@ func (g *githubREST) CommitFile(ctx context.Context, owner, repo string, spec Co
 	return nil
 }
 
+func escapeGitHubPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
 func (g *githubREST) CreatePR(ctx context.Context, owner, repo string, spec PRSpec) (int, string, error) {
+	if spec.ExpectedBaseSHA == "" {
+		return 0, "", fmt.Errorf("create PR: analyzed base commit SHA is required")
+	}
+	var ref struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	refURL := fmt.Sprintf("%s/repos/%s/%s/git/ref/heads/%s", g.apiRoot(), owner, repo, escapeGitHubPath(spec.Base))
+	if err := g.do(ctx, http.MethodGet, refURL, nil, &ref); err != nil {
+		return 0, "", fmt.Errorf("create PR: verify base %q: %w", spec.Base, err)
+	}
+	if ref.Object.SHA != spec.ExpectedBaseSHA {
+		return 0, "", fmt.Errorf("create PR: base %q changed during analysis; refusing stale PR", spec.Base)
+	}
 	body := map[string]string{
 		"title": spec.Title,
 		"head":  spec.Head,
@@ -293,7 +374,7 @@ func (g *githubREST) CreatePR(ctx context.Context, owner, repo string, spec PRSp
 		Number  int    `json:"number"`
 		HTMLURL string `json:"html_url"`
 	}
-	url := fmt.Sprintf("%s/repos/%s/%s/pulls", apiBase, owner, repo)
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls", g.apiRoot(), owner, repo)
 	if err := g.do(ctx, http.MethodPost, url, body, &out); err != nil {
 		return 0, "", fmt.Errorf("create pr: %w", err)
 	}
@@ -370,7 +451,7 @@ func (m *mockGitHub) DefaultBranch(ctx context.Context, owner, repo string) (str
 	return "main", nil
 }
 
-func (m *mockGitHub) CreateBranch(ctx context.Context, owner, repo, base, name string) error {
+func (m *mockGitHub) CreateBranch(ctx context.Context, owner, repo, base, name, expectedBaseSHA string) error {
 	m.record(ghAction{Kind: "branch", Detail: fmt.Sprintf("%s/%s: %s from %s", owner, repo, name, base)})
 	return nil
 }

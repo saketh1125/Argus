@@ -2,7 +2,10 @@ package agents
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -38,6 +41,17 @@ func NewPRAgent(gh tools.GitHubClient, cfg *config.Config, rep models.Reporter, 
 // returning a populated RunReport. The validated slice may contain demoted issues
 // (validator demotes in place); those are routed to the summary, not to PRs.
 func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated []*models.Issue, summary []*models.Issue) (*models.RunReport, error) {
+	if p.gh.Live() {
+		if p.cfg == nil || !p.cfg.EnableLiveAutoPR {
+			return nil, fmt.Errorf("refusing live GitHub writes while live autonomous PR generation is disabled")
+		}
+		if !p.cfg.AllowsGitHubRepo(owner, repo) {
+			return nil, fmt.Errorf("refusing live writes to non-allowlisted repository %s/%s", owner, repo)
+		}
+		if p.idx == nil || p.idx.SnapshotCommitSHA == "" {
+			return nil, fmt.Errorf("refusing live GitHub writes without the analyzed base commit SHA")
+		}
+	}
 	p.rep.SetStage(models.StagePR, 0)
 	if base == "" {
 		base = "main"
@@ -70,7 +84,11 @@ func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated [
 			continue
 		}
 		p.rep.SetAgentStatus("PRAgent", "raising PR for "+iss.File)
-		pr, err := p.raisePR(ctx, owner, repo, base, iss)
+		baseSHA := ""
+		if p.idx != nil {
+			baseSHA = p.idx.SnapshotCommitSHA
+		}
+		pr, err := p.raisePR(ctx, owner, repo, base, baseSHA, iss)
 		if err != nil {
 			p.rep.Log("pragent: PR for %s failed: %v", iss.File, err)
 			// Demote on failure so it still surfaces in the summary.
@@ -110,17 +128,21 @@ func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated [
 // raisePR creates the branch, commits the rewritten function, and opens the PR.
 // If the branch already exists (422 from GitHub), a timestamp suffix is appended
 // and the creation is retried once — preventing collision on re-runs.
-func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base string, iss *models.Issue) (models.PRResult, error) {
+func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base, baseSHA string, iss *models.Issue) (models.PRResult, error) {
+	commit, err := validatedCommitSpec(iss)
+	if err != nil {
+		return models.PRResult{}, fmt.Errorf("refusing unsafe patch: %w", err)
+	}
 	branch := fmt.Sprintf("codesentinel/fix-%s-%s-%d",
 		agtSanitizeForBranch(iss.BugType),
 		agtSanitizeForBranch(agtBaseName(iss.File)),
 		iss.LineStart)
 
-	if err := p.gh.CreateBranch(ctx, owner, repo, base, branch); err != nil {
+	if err := p.gh.CreateBranch(ctx, owner, repo, base, branch, baseSHA); err != nil {
 		if strings.Contains(err.Error(), "422") || strings.Contains(err.Error(), "already exists") {
 			// Append a Unix-second suffix and retry once.
 			branch = fmt.Sprintf("%s-%d", branch, time.Now().Unix())
-			if retryErr := p.gh.CreateBranch(ctx, owner, repo, base, branch); retryErr != nil {
+			if retryErr := p.gh.CreateBranch(ctx, owner, repo, base, branch, baseSHA); retryErr != nil {
 				return models.PRResult{}, fmt.Errorf("create branch (retry): %w", retryErr)
 			}
 		} else {
@@ -128,41 +150,67 @@ func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base string, iss *mo
 		}
 	}
 
-	// Commit the validated, full patched file content so the PR edits only the
-	// target function. We fall back to the rewritten function only when the
-	// validator had no on-disk file to patch (rare; isolated-validation path).
-	content := ""
-	diff := ""
-	if iss.Fix != nil && iss.Fix.Selected != nil {
-		diff = iss.Fix.Selected.Diff
-		if iss.Fix.Selected.PatchedFile != "" {
-			content = iss.Fix.Selected.PatchedFile
-		} else {
-			content = iss.Fix.Selected.RewrittenFunction
-		}
-	}
-
 	commitMsg := fmt.Sprintf("[CodeSentinel] Fix %s %s in %s:%d", iss.Severity, iss.BugType, iss.File, iss.LineStart)
-	if err := p.gh.CommitFile(ctx, owner, repo, tools.CommitSpec{
-		Branch:  branch,
-		Path:    iss.File,
-		Content: content,
-		Message: commitMsg,
-	}); err != nil {
+	commit.Branch = branch
+	commit.Message = commitMsg
+	if err := p.gh.CommitFile(ctx, owner, repo, commit); err != nil {
 		return models.PRResult{}, fmt.Errorf("commit: %w", err)
 	}
 
 	title := fmt.Sprintf("[CodeSentinel] Fix %s %s in %s", iss.Severity, iss.BugType, iss.File)
 	number, url, err := p.gh.CreatePR(ctx, owner, repo, tools.PRSpec{
-		Title: title,
-		Body:  p.prBody(iss, diff),
-		Head:  branch,
-		Base:  base,
+		Title:           title,
+		Body:            p.prBody(iss, commit.Patch),
+		Head:            branch,
+		Base:            base,
+		ExpectedBaseSHA: baseSHA,
 	})
 	if err != nil {
 		return models.PRResult{}, fmt.Errorf("create PR: %w", err)
 	}
 	return models.PRResult{Number: number, URL: url, Branch: branch, Issue: iss}, nil
+}
+
+func validatedCommitSpec(iss *models.Issue) (tools.CommitSpec, error) {
+	if iss == nil || !iss.Validated || iss.Demoted || iss.Fix == nil || iss.Fix.Selected == nil {
+		return tools.CommitSpec{}, fmt.Errorf("issue has no successful validation")
+	}
+	candidate := iss.Fix.Selected
+	if !filepath.IsLocal(iss.File) || iss.File == "." {
+		return tools.CommitSpec{}, fmt.Errorf("target path is not repository-relative")
+	}
+	if candidate.PatchedFile == "" || candidate.Diff == "" || iss.Fix.OriginalFunction == "" || candidate.RewrittenFunction == "" {
+		return tools.CommitSpec{}, fmt.Errorf("validated full-file patch metadata is incomplete")
+	}
+	if candidate.OriginalFile == "" {
+		return tools.CommitSpec{}, fmt.Errorf("validated source snapshot is missing")
+	}
+	originalSum := sha256.Sum256([]byte(candidate.OriginalFile))
+	if hex.EncodeToString(originalSum[:]) != candidate.OriginalFileSHA256 {
+		return tools.CommitSpec{}, fmt.Errorf("validated source content no longer matches its digest")
+	}
+	replayed, err := tools.ApplyFunctionRewrite(candidate.OriginalFile, iss.Fix.OriginalFunction, candidate.RewrittenFunction)
+	if err != nil || replayed != candidate.PatchedFile {
+		return tools.CommitSpec{}, fmt.Errorf("validated patch provenance does not replay against the source snapshot")
+	}
+	if len(candidate.OriginalFileSHA256) != sha256.Size*2 || len(candidate.PatchedFileSHA256) != sha256.Size*2 {
+		return tools.CommitSpec{}, fmt.Errorf("validated source/result digest is missing")
+	}
+	patchedSum := sha256.Sum256([]byte(candidate.PatchedFile))
+	if hex.EncodeToString(patchedSum[:]) != candidate.PatchedFileSHA256 {
+		return tools.CommitSpec{}, fmt.Errorf("validated file content no longer matches its digest")
+	}
+	expectedDiff := tools.UnifiedDiff(iss.Fix.OriginalFunction, candidate.RewrittenFunction, iss.File)
+	if expectedDiff == "" || expectedDiff != candidate.Diff {
+		return tools.CommitSpec{}, fmt.Errorf("patch diff does not match the validated function rewrite")
+	}
+	return tools.CommitSpec{
+		Path:                         iss.File,
+		Content:                      candidate.PatchedFile,
+		Patch:                        candidate.Diff,
+		ExpectedContentSHA256:        candidate.OriginalFileSHA256,
+		ExpectedPatchedContentSHA256: candidate.PatchedFileSHA256,
+	}, nil
 }
 
 // prBody renders the design §4.7 PR body template for an issue and its diff.
@@ -172,7 +220,7 @@ func (p *PRAgent) prBody(iss *models.Issue, diff string) string {
 	fmt.Fprintf(&b, "**Type:** %s\n", iss.BugType)
 	fmt.Fprintf(&b, "**Severity:** %s\n", iss.Severity)
 	fmt.Fprintf(&b, "**Confidence:** %.0f%%\n", iss.Confidence*100)
-	b.WriteString("**Validation:** ✅ Passed E2B sandbox\n\n")
+	b.WriteString("**Validation:** ✅ Passed configured sandbox validation\n\n")
 	b.WriteString("### Evidence\n")
 	fmt.Fprintf(&b, "File: `%s` | Lines: %d–%d\n\n", iss.File, iss.LineStart, iss.LineEnd)
 	for _, line := range strings.Split(strings.TrimRight(iss.Evidence, "\n"), "\n") {

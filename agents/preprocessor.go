@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
@@ -47,6 +49,9 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 
 	owner, repo, perr := p.gh.ParseURL(repoURL)
 	if perr != nil || owner == "" || repo == "" {
+		if p.gh.Live() {
+			return nil, "", "", "", fmt.Errorf("preprocessor: live GitHub mode requires a canonical repository URL")
+		}
 		owner, repo = "demo-owner", "demo-repo"
 	}
 
@@ -57,6 +62,17 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 
 	if _, err = p.gh.Clone(ctx, repoURL, workdir); err != nil {
 		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone %q: %w", repoURL, err)
+	}
+	snapshotSHA := ""
+	if p.gh.Live() {
+		output, shaErr := exec.CommandContext(ctx, "git", "-C", workdir, "rev-parse", "HEAD").Output()
+		if shaErr != nil {
+			return nil, workdir, owner, repo, fmt.Errorf("preprocessor: resolve analyzed Git commit: %w", shaErr)
+		}
+		snapshotSHA = strings.TrimSpace(string(output))
+		if len(snapshotSHA) != 40 {
+			return nil, workdir, owner, repo, fmt.Errorf("preprocessor: invalid analyzed Git commit SHA")
+		}
 	}
 	p.rep.SetStage(models.StageIngest, 20)
 
@@ -101,6 +117,7 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	}
 
 	idx = models.NewRepoIndex()
+	idx.SnapshotCommitSHA = snapshotSHA
 	total := len(cands)
 	for i, c := range cands {
 		p.rep.SetFilesProgress(i, total)

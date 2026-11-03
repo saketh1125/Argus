@@ -109,6 +109,18 @@ func run() error {
 		return fmt.Errorf("init services: %w", err)
 	}
 	gh := tools.NewGitHub(cfg)
+	if gh.Live() {
+		if !cfg.EnableLiveAutoPR {
+			return fmt.Errorf("refusing live GitHub writes: live autonomous PR generation is disabled")
+		}
+		owner, repo, parseErr := gh.ParseURL(cfg.RepoURL)
+		if parseErr != nil || !cfg.AllowsGitHubRepo(owner, repo) {
+			return fmt.Errorf("refusing live GitHub target: add the exact owner/repository to GITHUB_ALLOWED_REPOS")
+		}
+	}
+	if err := requireIsolatedValidationBeforeLivePR(gh.Live(), clients.Sandbox.Live()); err != nil {
+		return err
+	}
 	parser := tools.NewParser(cfg)
 
 	banner(cfg, clients, gh)
@@ -180,6 +192,13 @@ func run() error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = dash.Stop(shutCtx)
+	}
+	return nil
+}
+
+func requireIsolatedValidationBeforeLivePR(githubLive, sandboxLive bool) error {
+	if githubLive && !sandboxLive {
+		return fmt.Errorf("refusing live GitHub PR integration without an isolated sandbox; configure E2B_API_KEY or use mock GitHub")
 	}
 	return nil
 }
