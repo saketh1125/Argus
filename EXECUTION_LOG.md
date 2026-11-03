@@ -220,3 +220,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused clone and preprocessing tests — PASS. `go test ./... -count=1` — PASS. `go vet ./...`, changed-file gofmt, and `git diff --check` — PASS. `go build ./...` — exit 0 with restricted Go module-cache warning. Symlink regression skipped locally on Windows because the required privilege is unavailable; prior Ubuntu CI #65 executed it.
 - Current local changes are uncommitted and pending CI; last pushed checkpoint `eb533fd` passed CI #78/#79. No live credentials or providers were used.
 - Interim estimate is 83% across 23 acceptance rows: 17 VERIFIED, 4 PARTIALLY VERIFIED at half weight, 2 BLOCKED. E2B and approval/fork publication blockers remain; a hard Git clone transfer byte quota is still unresolved.
+
+## 2026-11-03 — Clone failure-path CI confirmation
+
+- Pushed `bebaa311302175163a781060307a81e9bccaee7f` as a fast-forward from `eb533fd`.
+- GitHub Actions [#80](https://github.com/saketh1125/Argus/actions/runs/41686622449) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build; all steps succeeded.
+- GitHub metadata confirms PR #2 remains open/draft/unmerged at `bebaa31`; working tree is clean and synchronized.
+- The 64 KiB clone diagnostic cap and failed-preprocessing temp cleanup are VERIFIED. Current equal-weight estimate is 89% (20 VERIFIED, 1 PARTIALLY VERIFIED at half weight, 2 BLOCKED out of 23). E2B live execution and exact-patch approval/fork publication remain unresolved; a hard clone transfer byte quota remains an operational gap.
