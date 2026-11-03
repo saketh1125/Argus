@@ -919,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; latest implementation `114ebd4` passed [CI #74](https://github.com/saketh1125/Argus/actions/runs/41685108596) and [#75](https://github.com/saketh1125/Argus/actions/runs/41685120189), including race and Windows AMD64 cross-build. PR #2 verified open/draft/unmerged at `114ebd4`. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. Clone transfer has a time limit but no byte quota. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; implementation `114ebd4` passed CI #74/#75; checkpoint `0944a79` passed [CI #76](https://github.com/saketh1125/Argus/actions/runs/41685441353) and [#77](https://github.com/saketh1125/Argus/actions/runs/41685450175), including race and Windows AMD64 cross-build. PR #2 verified open/draft/unmerged at `0944a79`. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. Clone transfer has a time limit but no byte quota. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |

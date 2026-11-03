@@ -206,3 +206,9 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - GitHub Actions [#74](https://github.com/saketh1125/Argus/actions/runs/41685108596) and [#75](https://github.com/saketh1125/Argus/actions/runs/41685120189) both passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build. The single `verify` job and every step passed on the pushed head.
 - Read-only GitHub API metadata confirms PR #2 is open, draft and unmerged at `114ebd4`. Working tree was clean and synchronized before this documentation checkpoint.
 - Provider-response and retry bounds are now VERIFIED with local mocked regressions and current-head CI. The current equal-weight estimate is 88%: 18/21 VERIFIED, 1/21 PARTIALLY VERIFIED at half credit, and 2/21 BLOCKED. E2B behavior and exact-patch approval/fork publication remain unresolved; clone transfer still lacks a byte quota.
+
+## 2026-11-03 — Current checkpoint CI confirmation
+
+- Documentation checkpoint `0944a79cc1148c7ea850700bc471158c8c4d98ad` passed GitHub Actions [#76](https://github.com/saketh1125/Argus/actions/runs/41685441353) and [#77](https://github.com/saketh1125/Argus/actions/runs/41685450175). Formatting, tests, vet, race, native build, Windows AMD64 cross-build, and every step succeeded.
+- Read-only GitHub API metadata confirms PR #2 is still open, draft and unmerged at `0944a79`. The working tree is synchronized and clean at the verified checkpoint before this log entry.
+- Phase 0 remains IN PROGRESS at 88% checklist estimate. E2B live behavior and exact-patch approval/fork publication remain BLOCKED; clone transfer has no byte quota.
