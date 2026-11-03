@@ -371,7 +371,7 @@ Suggested checks (adapt to repository scripts; inspect git status before formatt
 - [VERIFIED] PR agent and production GitHub client refuse live writes before any side effect.
 - [VERIFIED] Regression tests cover source mismatch, unrelated-code preservation, sandbox cancellation/results, and GitHub write uncertainty.
 - [PARTIALLY VERIFIED] Mock/live adapter state is explicit; mock mode is visible, while no real sandbox provider is enabled.
-- [PARTIALLY VERIFIED] CI required checks passed on the previous code checkpoint; CI for this continuation is pending push.
+- [VERIFIED] CI required checks pass on the current pushed checkpoint. Run [#45](https://github.com/saketh1125/Argus/actions/runs/41662912698) passed formatting, tests, vet, race, native build, and Windows AMD64 build on `d9b82a2`.
 
 ### Exit gate
 
@@ -944,7 +944,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | Direct live GitHub client writes cannot bypass the PR agent | VERIFIED | Production client refuses branch, file, PR and issue writes before network calls; regression test confirms zero requests. |
 | Host Git clone cannot invoke configured filters/helpers or copy symlink targets | VERIFIED | Clone accepts only canonical GitHub HTTPS URLs, disables ambient system/global/config helper settings, credential helpers, hooks and LFS smudge, and rejects local symlinks/special files. CI run #41 passed the Linux symlink and clone tests. |
 | Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
-| CI required checks pass on this audit's code | VERIFIED | Run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed formatting, tests, vet, race, native build and Windows AMD64 build on `f22c54e`. |
+| CI required checks pass on this audit's code and checkpoint | VERIFIED | Run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed all configured checks on implementation commit `f22c54e`; run [#45](https://github.com/saketh1125/Argus/actions/runs/41662912698) passed all configured checks on pushed checkpoint `d9b82a2`. |
 | Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | No `E2B_API_KEY`; old unverified adapter was removed from selection and implementation. Credential presence alone will not re-enable it. |
 | Exact-patch human approval and fork-based contribution publication | BLOCKED | Not implemented. Live writes now fail closed; no credentials or live publication tests were used. |
 

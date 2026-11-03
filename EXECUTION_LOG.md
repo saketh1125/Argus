@@ -69,6 +69,14 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - PR #2 remained open, draft and unmerged at `9f05f92`.
 - GitHub Actions [#43](https://github.com/saketh1125/Argus/actions/runs/41662533632) passed all configured checks on the documentation checkpoint.
 
+## 2026-11-03 — Latest checkpoint CI and credential-free audit
+
+- Confirmed `.env` is absent and checked integration credential presence without reading values; `GITHUB_TOKEN`, `GITHUB_ALLOWED_REPOS`, `NIM_API_KEY`, `JINA_API_KEY`, `GEMINI_API_KEY`, and `E2B_API_KEY` are unset.
+- Reviewed `.env.example`, config loading, and integration selection. Credential-free and mock tests cover model/GitHub adapters and unavailable sandbox behavior. Live NIM needs `NIM_API_KEY` plus `ARGUS_RUN_LIVE_NIM_TESTS=true`; live E2B would need `E2B_API_KEY` after a supported adapter is implemented; GitHub writes also require repository authorization and remain disabled.
+- PR #2 is open, draft, unmerged, and at `d9b82a2d2187ffde22828cc421d02bf99795fea7`.
+- GitHub Actions [#45](https://github.com/saketh1125/Argus/actions/runs/41662912698) completed successfully on `d9b82a2`, passing formatting, tests, vet, race tests, native build, and Windows AMD64 build.
+- Phase 0 remains in progress: real sandbox isolation and lifecycle, exact-patch approval, fork publication, and additional interruption/persistence failure coverage are not complete.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.
