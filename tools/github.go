@@ -89,11 +89,20 @@ func copyDirWithBudget(src, dst string, maxBytes int64, maxEntries int) error {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("copy dir: %s is not a directory", src)
 	}
+	root, err := os.OpenRoot(src)
+	if err != nil {
+		return fmt.Errorf("copy dir: open source root %s: %w", src, err)
+	}
+	defer root.Close()
+	opened, err := root.Stat(".")
+	if err != nil || !os.SameFile(info, opened) {
+		return fmt.Errorf("copy dir: source root changed while opening")
+	}
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return fmt.Errorf("copy dir: mkdir %s: %w", dst, err)
 	}
 	budget := copyBudget{remainingBytes: maxBytes, remainingEntries: maxEntries}
-	return copyDirContents(src, dst, &budget)
+	return copyDirContents(root, dst, &budget)
 }
 
 type copyBudget struct {
@@ -101,41 +110,58 @@ type copyBudget struct {
 	remainingEntries int
 }
 
-func copyDirContents(src, dst string, budget *copyBudget) error {
-	entries, err := os.ReadDir(src)
+func copyDirContents(root *os.Root, dst string, budget *copyBudget) error {
+	dir, err := root.Open(".")
 	if err != nil {
-		return fmt.Errorf("copy dir: read %s: %w", src, err)
+		return fmt.Errorf("copy dir: open source directory: %w", err)
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return fmt.Errorf("copy dir: read source directory: %w", err)
 	}
 	for _, e := range entries {
 		if budget.remainingEntries <= 0 {
 			return fmt.Errorf("copy dir: entry count exceeds configured limit")
 		}
 		budget.remainingEntries--
-		s := filepath.Join(src, e.Name())
-		d := filepath.Join(dst, e.Name())
-		info, err := os.Lstat(s)
+		name := e.Name()
+		if name == "" || name == "." || name == ".." || filepath.Base(name) != name {
+			return fmt.Errorf("copy dir: refusing unsafe entry name %q", name)
+		}
+		d := filepath.Join(dst, name)
+		info, err := root.Lstat(name)
 		if err != nil {
-			return fmt.Errorf("copy dir: inspect %s: %w", s, err)
+			return fmt.Errorf("copy dir: inspect %s: %w", name, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("copy dir: refusing symlink %s", s)
+			return fmt.Errorf("copy dir: refusing symlink %s", name)
 		}
 		if info.IsDir() {
+			child, err := openCopyDirectory(root, name, info)
+			if err != nil {
+				return err
+			}
 			if err := os.MkdirAll(d, 0o755); err != nil {
+				_ = child.Close()
 				return fmt.Errorf("copy dir: mkdir %s: %w", d, err)
 			}
-			if err := copyDirContents(s, d, budget); err != nil {
+			if err := copyDirContents(child, d, budget); err != nil {
+				_ = child.Close()
 				return err
+			}
+			if err := child.Close(); err != nil {
+				return fmt.Errorf("copy dir: close source directory %s: %w", name, err)
 			}
 			continue
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("copy dir: refusing non-regular file %s", s)
+			return fmt.Errorf("copy dir: refusing non-regular file %s", name)
 		}
 		if info.Size() > budget.remainingBytes {
 			return fmt.Errorf("copy dir: total file bytes exceed %d-byte limit", maxLocalCopyBytes)
 		}
-		copied, err := copyFileBounded(s, d, info, budget.remainingBytes)
+		copied, err := copyFileBounded(root, name, d, info, budget.remainingBytes)
 		if err != nil {
 			return err
 		}
@@ -144,10 +170,25 @@ func copyDirContents(src, dst string, budget *copyBudget) error {
 	return nil
 }
 
+// openCopyDirectory pins the inspected directory and verifies it did not
+// change into a symlink or a different directory before it was opened.
+func openCopyDirectory(root *os.Root, name string, expected os.FileInfo) (*os.Root, error) {
+	child, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, fmt.Errorf("copy dir: open source directory %s: %w", name, err)
+	}
+	opened, err := child.Stat(".")
+	if err != nil || !os.SameFile(expected, opened) {
+		_ = child.Close()
+		return nil, fmt.Errorf("copy dir: source directory %s changed while opening", name)
+	}
+	return child, nil
+}
+
 // copyFileBounded copies a regular file only if it is still the same file
 // inspected by its caller, and never reads more than limit+1 bytes.
-func copyFileBounded(src, dst string, expected os.FileInfo, limit int64) (int64, error) {
-	in, err := os.Open(src)
+func copyFileBounded(root *os.Root, src, dst string, expected os.FileInfo, limit int64) (int64, error) {
+	in, err := root.Open(src)
 	if err != nil {
 		return 0, fmt.Errorf("copy file: open %s: %w", src, err)
 	}

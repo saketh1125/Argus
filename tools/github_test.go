@@ -98,6 +98,85 @@ func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestCopyDirRejectsDirectorySwappedToSymlinkAfterInspection(t *testing.T) {
+	source := t.TempDir()
+	original := filepath.Join(source, "sub")
+	other := filepath.Join(source, "other")
+	if err := os.Mkdir(original, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "secret.go"), []byte("package secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := os.Lstat(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(original, filepath.Join(source, "moved")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("rename unavailable on this platform: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := os.Symlink("other", original); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation unavailable on this platform: %v", err)
+		}
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	child, err := openCopyDirectory(root, "sub", expected)
+	if err == nil {
+		_ = child.Close()
+		t.Fatal("copy directory open accepted a symlink substituted after inspection")
+	}
+}
+
+func TestCopyDirRejectsFileSwappedToSymlinkAfterInspection(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "candidate.go"), []byte("package original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "secret.go"), []byte("package secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := os.Lstat(filepath.Join(source, "candidate.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(source, "candidate.go"), filepath.Join(source, "moved.go")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("rename unavailable on this platform: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if err := os.Symlink("secret.go", filepath.Join(source, "candidate.go")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation unavailable on this platform: %v", err)
+		}
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	dest := filepath.Join(t.TempDir(), "candidate.go")
+	if _, err := copyFileBounded(root, "candidate.go", dest, expected, 1024); err == nil {
+		t.Fatal("copy file accepted a symlink substituted after inspection")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("copy created destination after source identity mismatch: stat error = %v", err)
+	}
+}
+
 func TestCopyDirEnforcesAggregateByteAndEntryBudgets(t *testing.T) {
 	t.Run("bytes", func(t *testing.T) {
 		source := t.TempDir()
