@@ -372,7 +372,7 @@ Suggested checks (adapt to repository scripts; inspect git status before formatt
 - [VERIFIED] Regression tests cover source mismatch, unrelated-code preservation, sandbox cancellation/results, and GitHub write uncertainty.
 - [VERIFIED] Successful sandbox attempts record the actual provider and live/mock mode; failed attempts clear model-supplied validation claims, and publication rejects missing or non-live sandbox provenance.
 - [PARTIALLY VERIFIED] Mock/live adapter state is explicit; mock mode is visible, while no real sandbox provider is enabled.
-- [VERIFIED] CI required checks pass on the latest pushed implementation. Run [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546) passed formatting, tests, vet, race, native build, and Windows AMD64 build on `ee0c9c8`.
+- [VERIFIED] CI required checks pass on the latest pushed checkpoint. Run [#105](https://github.com/saketh1125/Argus/actions/runs/41696177324) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build on `a4e70bc`; the implementation change `71033f8` separately passed run [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609).
 
 ### Exit gate
 
@@ -919,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; implementation and tests at `6c7dbf4` passed [CI run 41689430471](https://github.com/saketh1125/Argus/actions/runs/41689430471), including race and Windows AMD64 cross-build. PR #2 verified open/draft/unmerged at `6c7dbf4`. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. Remote Git clone transfer still has no hard byte quota. |
+| P0 — Baseline and safety | IN PROGRESS | Current checkpoint `a4e70bc`; implementation commit `71033f8` passed CI [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609), and current documentation checkpoint passed [#105](https://github.com/saketh1125/Argus/actions/runs/41696177324), including race and Windows AMD64 cross-build. PR #2 is open, draft and unmerged at `a4e70bc`. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -928,7 +928,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | P6 — Deployment | NOT STARTED | — | Security, operations and deployed workflow |
 | P7 — Evaluation/release | NOT STARTED | — | Benchmark and measured quality |
 
-### Phase 0 verification checkpoint — 2026-11-03
+### Phase 0 verification checkpoint — 2026-11-04
 
 | Requirement | Status | Evidence / limitation |
 |---|---|---|
