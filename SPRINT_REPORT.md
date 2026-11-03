@@ -70,12 +70,12 @@ P0 remains **IN PROGRESS**. The Windows-to-Linux command-generation defect is fi
 - Focused launcher regressions — PASS: cross-site Origin, rebound Host, wrong port, missing/query-only/replayed token, oversized form, concurrent submission, and no-store token page.
 - Full go test ./... -count=1 — PASS; go vet ./... — PASS; go build ./... — exit 0 with the restricted module stat-cache warning.
 - Offline sample workflow — PASS: all integrations labelled mock/unavailable, 3 candidates, zero PRs, 2 demoted.
-- go test -race ./... — BLOCKED locally because CGO_ENABLED=0; CI is pending for this dashboard change.
+- go test -race ./... — BLOCKED locally because CGO_ENABLED=0. GitHub Actions run [#61](https://github.com/saketh1125/Argus/actions/runs/41671901691) passed formatting, tests, vet, race test, native build, and Windows AMD64 cross-build on `77ccd1a`.
 - git diff --check — PASS with Windows line-ending warnings. No credentials or live services were used.
 
 ### Current estimate and status
 
-Current working-copy estimate: **82%** by equal-weight checklist scoring: 14 of 19 rows VERIFIED, 3 PARTIALLY VERIFIED (each counts as one half), and 2 BLOCKED. The dashboard change is locally verified but has no CI evidence yet. E2B remains unavailable; exact-patch approval and fork-based publication remain incomplete. Phase 0 exit gate is not met.
+Current estimate: **87%** by equal-weight checklist scoring: 16 of 19 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. The launcher change passed CI #61. E2B remains unavailable; exact-patch approval and fork-based publication remain incomplete. Phase 0 exit gate is not met.
 
 ## Continued audit — 2026-11-03
 

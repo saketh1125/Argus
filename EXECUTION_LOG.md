@@ -149,3 +149,11 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused launcher tests — PASS, including cross-origin, Host rebinding, wrong port, query-only/missing/replayed token, oversized request, one-shot and concurrent submissions. Full go test ./... -count=1 — PASS; go vet ./... — PASS; go build ./... — exit 0 with restricted module stat-cache warning.
 - Offline mock sample — PASS: mode/adapters labelled, sandbox=unavailable, 3 candidates, zero PRs, 2 demoted. Local race test — BLOCKED because CGO_ENABLED=0. CI for current local changes is pending.
 - .env/credential values were not read. No live model, GitHub or E2B operation occurred. Phase 0 remains IN PROGRESS; sandbox execution and publication workflow remain unresolved.
+
+## 2026-11-03 — Dashboard launcher fix CI confirmation
+
+- Committed launcher hardening and checkpoint evidence as `77ccd1a2d98ced452d9f75c715ff4099cd74211b`; pushed a fast-forward from `d9cb6d2` to `origin/codex/pr-patch-safety`. PR #2 remains open, draft and unmerged.
+- GitHub Actions run [#61](https://github.com/saketh1125/Argus/actions/runs/41671901691) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build.
+- Focused launcher tests and `go test ./... -count=1`, `go vet ./...`, `go build ./...`, and offline mock sample also passed locally. The local race command remains unavailable because `CGO_ENABLED=0`.
+- Presence-only environment inventory confirmed `.env` is absent and integration variables are unset; secret values were not read. Credential-free, mock-based and live-only requirements are classified in `EXECUTION_PLAN.md`.
+- No live provider, E2B, credential, GitHub publication or PR creation was exercised. Phase 0 remains IN PROGRESS; E2B isolation and exact-patch approval/fork publication remain blockers.
