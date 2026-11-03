@@ -250,3 +250,9 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Full tests and focused copy-budget tests pass locally; `go vet ./...`, formatting and build pass. The Windows symlink test remains skipped for missing privilege. CI #86 passed before this code change; current-head CI is pending.
 - This does not cap remote Git HTTPS clone transfer/storage; that remains a separate BLOCKED acceptance row.
 - Interim estimate: **82%** over 25 equal-weight rows: 19 VERIFIED, 3 PARTIALLY VERIFIED at half credit, 3 BLOCKED; `(19 + 1.5) / 25 = 82%`. The pending rows are current-head CI and local-copy limits; the blockers are remote clone quota, E2B, and approval/fork publication.
+
+## Local-copy bound CI confirmation — 2026-11-03
+
+- Commit `430aa38cadd8d056fe985c7559d80047031f15ff` passed both connected GitHub checks [41688619335](https://github.com/saketh1125/Argus/actions/runs/41688619335) and [41688631081](https://github.com/saketh1125/Argus/actions/runs/41688631081). Both passed formatting, tests, vet, race, native build and Windows AMD64 cross-build; every job step succeeded.
+- PR #2 was verified open, draft and unmerged at `430aa38`; the branch was clean and synchronized at that implementation checkpoint.
+- Updated estimate: **86%** over 25 equal-weight rows: 21 VERIFIED, 1 PARTIALLY VERIFIED at half credit, 3 BLOCKED; `(21 + 0.5) / 25 = 86%`. Remaining blockers are remote Git clone transfer/disk quota, E2B live verification, and exact-patch approval/fork publication. Explicit mock/live state remains partially verified.

@@ -246,3 +246,9 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused byte/entry regressions and full `go test ./... -count=1` pass. `go vet ./...`, gofmt and `git diff --check` pass; `go build ./...` exits 0 with the module-cache access warning.
 - The remote Git HTTPS transfer itself remains unbounded; local copy caps do not resolve that blocker. This source change is local and awaits CI; last pushed checkpoint `12f3e27` passed CI #86.
 - Interim checklist estimate is 82% across 25 rows: 19 VERIFIED, 3 PARTIALLY VERIFIED at half credit, and 3 BLOCKED. No live credentials or services were used.
+
+## 2026-11-03 — Local-copy bounds CI confirmation
+
+- Pushed implementation `430aa38cadd8d056fe985c7559d80047031f15ff` as a fast-forward from `12f3e27`.
+- Connected GitHub checks [41688619335](https://github.com/saketh1125/Argus/actions/runs/41688619335) and [41688631081](https://github.com/saketh1125/Argus/actions/runs/41688631081) both passed formatting, tests, vet, race, native build and Windows AMD64 cross-build on `430aa38`; every job step succeeded.
+- The 256 MiB/100,000-entry local-copy limits and regressions are now VERIFIED. Remote Git HTTPS transfer remains unbounded. Current score is 86% across 25 acceptance rows: 21 VERIFIED, 1 PARTIALLY VERIFIED at half credit, 3 BLOCKED.
