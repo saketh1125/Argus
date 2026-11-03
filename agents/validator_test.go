@@ -16,8 +16,8 @@ import (
 // the "validated" path regardless of the language/commands.
 type passSandbox struct{}
 
-func (passSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
-	return &services.SandboxResult{Success: true, Logs: "ok"}, nil
+func (passSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
+	return &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: len(spec.Commands), CommandExitCodes: make([]int, len(spec.Commands)), Logs: "ok"}, nil
 }
 func (passSandbox) Name() string { return "pass-sandbox" }
 func (passSandbox) Live() bool   { return false }
@@ -140,11 +140,69 @@ func TestValidatorDoesNotGenerateTestCommands(t *testing.T) {
 	}
 }
 
+func TestValidatorRejectsIncompleteOrContradictorySandboxResults(t *testing.T) {
+	cases := []struct {
+		name   string
+		result *services.SandboxResult
+	}{
+		{name: "missing command completion", result: &services.SandboxResult{Success: true}},
+		{name: "nonzero exit", result: &services.SandboxResult{Success: true, ExitCode: 2, CommandsRun: 1}},
+		{name: "hidden earlier failure", result: &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: 1, CommandExitCodes: []int{1}}},
+		{name: "timeout", result: &services.SandboxResult{Success: true, CommandsRun: 1, TimedOut: true}},
+		{name: "reported failure", result: &services.SandboxResult{Success: false, CommandsRun: 1}},
+		{name: "oversized output", result: &services.SandboxResult{Success: true, CommandsRun: 1, Logs: strings.Repeat("x", 4<<20+1)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			iss := validateSingleGoCandidate(t, resultSandbox{result: tc.result}, context.Background())
+			if iss.Validated || !iss.Demoted || iss.Fix.Selected != nil {
+				t.Fatalf("invalid sandbox result was accepted: validated=%v demoted=%v selected=%v", iss.Validated, iss.Demoted, iss.Fix.Selected)
+			}
+		})
+	}
+}
+
+func TestValidatorRejectsResultAfterContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	validResult := &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: 1, CommandExitCodes: []int{0}}
+	iss := validateSingleGoCandidate(t, resultSandbox{result: validResult}, ctx)
+	if iss.Validated || !iss.Demoted {
+		t.Fatalf("cancelled validation must not accept a success result: validated=%v demoted=%v", iss.Validated, iss.Demoted)
+	}
+}
+
+func validateSingleGoCandidate(t *testing.T, sandbox services.Sandbox, ctx context.Context) *models.Issue {
+	t.Helper()
+	const original = "package main\nfunc f() int { return 1 }\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 1 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
+	}
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	if _, err := v.Run(ctx, dir, []*models.Issue{iss}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return iss
+}
+
+type resultSandbox struct{ result *services.SandboxResult }
+
+func (s resultSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	return s.result, nil
+}
+func (resultSandbox) Name() string { return "result-fixture" }
+func (resultSandbox) Live() bool   { return false }
+
 type recordSandbox struct{ specs []services.SandboxSpec }
 
 func (s *recordSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
 	s.specs = append(s.specs, spec)
-	return &services.SandboxResult{Success: true}, nil
+	return &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: len(spec.Commands), CommandExitCodes: make([]int, len(spec.Commands))}, nil
 }
 func (*recordSandbox) Name() string { return "record" }
 func (*recordSandbox) Live() bool   { return false }

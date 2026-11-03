@@ -35,6 +35,57 @@ func TestParseURL(t *testing.T) {
 	}
 }
 
+func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("outside repository"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := t.TempDir()
+	link := filepath.Join(source, "linked-secret.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink creation unavailable on this platform: %v", err)
+	}
+	dest := filepath.Join(t.TempDir(), "copy")
+	if err := copyDir(source, dest); err == nil || !strings.Contains(err.Error(), "refusing symlink") {
+		t.Fatalf("copyDir must reject repository symlinks, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "linked-secret.txt")); !os.IsNotExist(err) {
+		t.Fatalf("copyDir exposed linked outside content: stat err=%v", err)
+	}
+}
+
+func TestGitHubCloneRejectsRemoteHelperURLs(t *testing.T) {
+	client := newGitHubREST("test-token")
+	if _, err := client.Clone(context.Background(), "ext::sh -c 'touch marker'", filepath.Join(t.TempDir(), "checkout")); err == nil || !strings.Contains(err.Error(), "refusing non-GitHub remote") {
+		t.Fatalf("clone must reject Git remote helper URLs, got %v", err)
+	}
+}
+
+func TestGitCloneEnvironmentDisablesAmbientGitExecutionConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "filter.hostile.smudge")
+	t.Setenv("GIT_CONFIG_VALUE_0", "touch marker")
+	t.Setenv("GIT_DIR", "C:\\outside\\.git")
+	t.Setenv("GIT_EXEC_PATH", "C:\\outside\\git-core")
+	t.Setenv("GIT_SSH_COMMAND", "touch marker")
+
+	got := make(map[string]string)
+	for _, item := range gitCloneEnvironment() {
+		key, value, ok := strings.Cut(item, "=")
+		if ok {
+			got[strings.ToUpper(key)] = value
+		}
+	}
+	for _, blocked := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_DIR", "GIT_EXEC_PATH", "GIT_SSH_COMMAND"} {
+		if _, ok := got[blocked]; ok {
+			t.Errorf("ambient %s must not reach git clone", blocked)
+		}
+	}
+	if got["GIT_CONFIG_NOSYSTEM"] != "1" || got["GIT_CONFIG_GLOBAL"] != os.DevNull || got["GIT_LFS_SKIP_SMUDGE"] != "1" || got["GIT_TERMINAL_PROMPT"] != "0" {
+		t.Fatalf("git clone safety environment incomplete: %+v", got)
+	}
+}
+
 func TestParseURLRejectsLookalikeHostsAndNonRepositoryPaths(t *testing.T) {
 	for _, value := range []string{
 		"https://evil.example/github.com/o/r",
@@ -133,7 +184,7 @@ func TestGitHubCommitFileUsesValidatedDiffAndHashesBranchContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL, writesAllowed: true}
 	err := client.CommitFile(context.Background(), "o", "r", CommitSpec{
 		Branch: "feature", Path: "src/f.go", Content: patched, Patch: "@@ minimal @@\n",
 		ExpectedContentSHA256:        hex.EncodeToString(originalSum[:]),
@@ -169,7 +220,7 @@ func TestGitHubCommitFileRejectsConflictingBranchModification(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL, writesAllowed: true}
 	err := client.CommitFile(context.Background(), "o", "r", CommitSpec{
 		Branch: "feature", Path: "src/f.go", Content: patched, Patch: "@@ minimal @@\n",
 		ExpectedContentSHA256:        hex.EncodeToString(validatedSum[:]),
@@ -184,7 +235,7 @@ func TestGitHubCommitFileRejectsConflictingBranchModification(t *testing.T) {
 }
 
 func TestGitHubCommitFileRejectsMissingGuards(t *testing.T) {
-	client := &githubREST{token: "test", http: http.DefaultClient, baseURL: "http://127.0.0.1"}
+	client := &githubREST{token: "test", http: http.DefaultClient, baseURL: "http://127.0.0.1", writesAllowed: true}
 	err := client.CommitFile(context.Background(), "o", "r", CommitSpec{Path: "f.go", Content: "replacement"})
 	if err == nil || !strings.Contains(err.Error(), "digests are required") {
 		t.Fatalf("expected fail-closed missing guard, got %v", err)
@@ -202,7 +253,7 @@ func TestGitHubCreateBranchRejectsMovedBaseBeforeCreatingRef(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
-	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL, writesAllowed: true}
 	err := client.CreateBranch(context.Background(), "o", "r", "main", "codesentinel/fix", "analyzed-base")
 	if err == nil || !strings.Contains(err.Error(), "changed since repository scan") {
 		t.Fatalf("expected stale base rejection, got %v", err)
@@ -223,13 +274,50 @@ func TestGitHubCreatePRRejectsMovedBase(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
-	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL, writesAllowed: true}
 	_, _, err := client.CreatePR(context.Background(), "o", "r", PRSpec{Head: "feature", Base: "main", ExpectedBaseSHA: "analyzed-base"})
 	if err == nil || !strings.Contains(err.Error(), "changed during analysis") {
 		t.Fatalf("expected moved base rejection, got %v", err)
 	}
 	if postCalled {
 		t.Fatal("must not create a PR after the base moves")
+	}
+}
+
+func TestProductionGitHubRESTClientBlocksAllWritesBeforeNetwork(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+	client := newGitHubREST("test-token")
+	client.baseURL = server.URL
+
+	checks := []struct {
+		name string
+		err  error
+	}{
+		{"branch", client.CreateBranch(context.Background(), "o", "r", "main", "feature", "sha")},
+		{"commit", client.CommitFile(context.Background(), "o", "r", CommitSpec{})},
+	}
+	_, _, prErr := client.CreatePR(context.Background(), "o", "r", PRSpec{})
+	checks = append(checks, struct {
+		name string
+		err  error
+	}{"pull request", prErr})
+	_, _, issueErr := client.CreateIssue(context.Background(), "o", "r", "title", "body")
+	checks = append(checks, struct {
+		name string
+		err  error
+	}{"issue", issueErr})
+
+	for _, check := range checks {
+		if check.err == nil || !strings.Contains(check.err.Error(), "exact-patch human approval") {
+			t.Errorf("%s write was not refused: %v", check.name, check.err)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("production client sent %d network requests while writes are disabled", requests)
 	}
 }
 

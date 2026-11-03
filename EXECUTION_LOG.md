@@ -33,6 +33,17 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - PR #2 remains open, draft and unmerged at `3d94f81`.
 - GitHub Actions run [#33](https://github.com/saketh1125/Argus/actions/runs/41657123955) completed successfully on that documentation checkpoint.
 
+## 2026-11-03 — Validator result and host-clone boundary audit
+
+- Reconfirmed clean baseline `b73e02476b22ef4f9a8178affa3ed3e0d64394b0` on the synchronized `codex/pr-patch-safety` branch before edits.
+- Validator success now requires aggregate and per-command zero exits, no timeout, exact completed-command count and non-cancelled context. Adversarial tests reject missing completion metadata, hidden earlier command failure, nonzero exit, timeout, explicit failure, cancellation and oversized output.
+- Sandbox result output is capped at 4 MiB; stored validation text and failure details are capped at 64 KiB.
+- Production `githubREST` clients now reject all branch/content/PR/issue writes before network access. Added a regression that asserts zero requests; package tests explicitly opt into the internal test seam when exercising REST conflict guards.
+- Git cloning now rejects remote-helper URLs, normalizes accepted remotes to GitHub HTTPS, clears ambient Git configuration/path/helper variables, disables credential helpers and LFS smudge, and applies a two-minute timeout.
+- Local directory copying now rejects symlinks and non-regular files. The Windows symlink regression skipped because symlink creation privilege is unavailable; Linux CI must verify it.
+- Focused tests, full `go test ./...`, `go vet ./...`, and `go build ./...` pass; build emits a restricted stat-cache warning. The offline mock workflow passes with sandbox unavailable and no PRs. No live credentials were used.
+- This continuation remains uncommitted; its CI, including the Linux symlink test, is pending.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

@@ -32,6 +32,26 @@ The Windows checkout has no `.env`; presence checks showed all integration crede
 
 P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effect live publication refusal, and CI are verified. Real E2B execution and exact-patch approval/fork publishing remain blockers.
 
+## Continued audit — 2026-11-03
+
+### Additional findings addressed
+
+- **High — validator trusted `Success=true` alone.** It now requires aggregate and per-command zero exits, no timeout, a completed result for every requested command, and a non-cancelled context. Results are capped at 4 MiB and stored validation text at 64 KiB. Adversarial tests cover missing command counts, hidden earlier command failure, nonzero exit, timeout, explicit failure, cancellation and oversized output.
+- Sandbox result output is capped at 4 MiB; persisted validation text and failure details are separately capped to prevent unbounded report growth.
+- **High — direct `githubREST` writes could bypass `PRAgent`.** The production REST client now refuses branch, content, PR and issue writes before making a request. Its only write-enabled seam exists in package tests for testing stale-state and conflict safeguards.
+- **High — host Git clone inherited execution configuration.** Clone URLs are parsed and normalized to canonical GitHub HTTPS URLs; ambient Git config, helper/path overrides, credential helpers and LFS smudge are disabled; cloning has a 2-minute deadline.
+- **High — local mock copy followed symlinks.** `copyDir` now refuses symlinks and special files. Its symlink regression skipped on this Windows host because creating a symlink requires an unavailable privilege; Linux CI must execute it.
+
+### Verification for this continuation
+
+- Targeted validator, GitHub write-path and clone-boundary tests — PASS.
+- Full `go test ./...` — PASS.
+- `go vet ./...` — PASS.
+- `go build ./...` — exit 0 with the same restricted module stat-cache warning.
+- Offline mock workflow — PASS; mock adapters visible, sandbox unavailable, zero PRs and two candidates demoted.
+- Live sandbox/publication tests — NOT RUN. Windows symlink regression — SKIPPED locally; remote Linux CI pending.
+- This continuation is not yet pushed; do not count prior CI as verification for these changes.
+
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`
 Baseline commit: `0089d0779c00f53c4f45acfd2437e093a2cbd484`

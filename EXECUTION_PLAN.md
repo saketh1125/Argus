@@ -362,16 +362,16 @@ Suggested checks (adapt to repository scripts; inspect git status before formatt
 
 ### Acceptance criteria
 
-- [ ] Exact baseline commit and environment recorded.
-- [ ] Existing test/build outcomes documented accurately.
-- [ ] No arbitrary LLM-supplied command can execute on the host.
-- [ ] No untrusted repository code is executed outside genuine isolation.
-- [ ] Missing sandbox is reported as validation unavailable.
-- [ ] Validator cannot mark a partial/function-only rewrite as a valid full-file patch.
-- [ ] PR agent refuses missing, empty, stale or incomplete full-file patches.
-- [ ] Regression tests cover source mismatch and preservation of unrelated code.
-- [ ] Mock/live adapter state is explicit.
-- [ ] CI runs required checks successfully.
+- [VERIFIED] Exact baseline commit and environment recorded.
+- [VERIFIED] Existing test/build outcomes documented accurately; local build exits 0 with restricted stat-cache warning.
+- [VERIFIED] No arbitrary LLM-supplied command can execute on the host.
+- [VERIFIED] Repository code is not executed on the host; without a verified isolated provider, validation is unavailable and code does not run.
+- [VERIFIED] Missing or disabled sandbox is reported as validation unavailable.
+- [VERIFIED] Validator cannot mark a partial/function-only rewrite as a valid full-file patch or accept an incomplete/contradictory sandbox result.
+- [VERIFIED] PR agent and production GitHub client refuse live writes before any side effect.
+- [VERIFIED] Regression tests cover source mismatch, unrelated-code preservation, sandbox cancellation/results, and GitHub write uncertainty.
+- [PARTIALLY VERIFIED] Mock/live adapter state is explicit; mock mode is visible, while no real sandbox provider is enabled.
+- [PARTIALLY VERIFIED] CI required checks passed on the previous code checkpoint; CI for this continuation is pending push.
 
 ### Exit gate
 
@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; audit code commit `a039095fbb517e90fcda430d3806f056ea79f6a9`. Local full tests, vet, targeted regressions, and mock run pass. GitHub Actions [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) passed formatting, tests, vet, race, native build and Windows AMD64 build on `a039095`. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; latest pushed checkpoint `b73e02476b22ef4f9a8178affa3ed3e0d64394b0` passed CI run [#35](https://github.com/saketh1125/Argus/actions/runs/41657499343). A local follow-up adds stricter result handling and host Git/copy boundaries; full tests/vet/build pass locally and its CI is pending. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -940,6 +940,9 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | PR agent rejects absent, empty, stale, incomplete or mutated full-file provenance | VERIFIED | Existing provenance, conflict and base SHA tests pass; live PR entry point now refuses before any write until exact approval and fork publication exist. |
 | Regression tests preserve source/siblings and reject stale source | VERIFIED | Validator and GitHub patch safety tests pass. |
 | GitHub write retry/partial-failure handling is bounded | VERIFIED | Write requests make a single attempt and surface uncertain outcomes; response size and client time are bounded. Focused mocked HTTP tests pass. |
+| Sandbox results must account for every command and reject timeout/nonzero/cancellation/oversized output | VERIFIED | Validator requires success, aggregate and per-command zero exits, no timeout, exact command count, active context, and no more than 4 MiB of output; adversarial tests cover incomplete, contradictory, cancelled and oversized results. |
+| Direct live GitHub client writes cannot bypass the PR agent | VERIFIED | Production client refuses branch, file, PR and issue writes before network calls; regression test confirms zero requests. |
+| Host Git clone cannot invoke configured filters/helpers or copy symlink targets | PARTIALLY VERIFIED | Remote-helper URLs and ambient Git execution configuration are rejected/cleared; local symlinks and special files are refused. Windows skipped symlink creation due privilege; Linux CI is required for that regression. |
 | Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
 | CI required checks pass on this audit's code | VERIFIED | Run [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) passed formatting, tests, vet, race, native build and Windows AMD64 build on `a039095`. |
 | Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | No `E2B_API_KEY`; old unverified adapter was removed from selection and implementation. Credential presence alone will not re-enable it. |

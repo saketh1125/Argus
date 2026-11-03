@@ -110,11 +110,38 @@ type SandboxSpec struct {
 
 // SandboxResult captures the outcome of a sandbox run.
 type SandboxResult struct {
-	Success  bool
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	Logs     string
+	Success          bool
+	ExitCode         int
+	CommandsRun      int // completed command responses, including a failing command
+	CommandExitCodes []int
+	TimedOut         bool
+	Stdout           string
+	Stderr           string
+	Logs             string
+}
+
+const maxSandboxResultBytes = 4 << 20
+
+// SuccessfulFor reports whether every requested command has an explicit,
+// successful completion result. Missing command counts and contradictory
+// success/exit/timeout fields are invalid and must fail validation.
+func (r *SandboxResult) SuccessfulFor(spec SandboxSpec) bool {
+	return r != nil && len(spec.Commands) > 0 && r.Success && !r.TimedOut &&
+		r.ExitCode == 0 && r.CommandsRun == len(spec.Commands) &&
+		allCommandsSucceeded(r.CommandExitCodes, len(spec.Commands)) &&
+		len(r.Stdout)+len(r.Stderr)+len(r.Logs) <= maxSandboxResultBytes
+}
+
+func allCommandsSucceeded(exitCodes []int, expected int) bool {
+	if len(exitCodes) != expected {
+		return false
+	}
+	for _, exitCode := range exitCodes {
+		if exitCode != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // Sandbox runs untrusted patched code in isolation to validate fixes.

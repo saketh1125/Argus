@@ -63,14 +63,15 @@ func parseGitHubURL(rawURL string) (owner, repo string, err error) {
 	return owner, repo, nil
 }
 
-// copyDir recursively copies the directory tree at src into dst, creating dst
-// and any parents. Symlinks are followed as regular files.
+// copyDir recursively copies a regular directory tree at src into dst. It
+// rejects symlinks and special files so local repository copies cannot read
+// content outside the selected tree.
 func copyDir(src, dst string) error {
-	info, err := os.Stat(src)
+	info, err := os.Lstat(src)
 	if err != nil {
 		return fmt.Errorf("copy dir: stat %s: %w", src, err)
 	}
-	if !info.IsDir() {
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf("copy dir: %s is not a directory", src)
 	}
 	if err := os.MkdirAll(dst, 0o755); err != nil {
@@ -83,11 +84,21 @@ func copyDir(src, dst string) error {
 	for _, e := range entries {
 		s := filepath.Join(src, e.Name())
 		d := filepath.Join(dst, e.Name())
-		if e.IsDir() {
+		info, err := os.Lstat(s)
+		if err != nil {
+			return fmt.Errorf("copy dir: inspect %s: %w", s, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("copy dir: refusing symlink %s", s)
+		}
+		if info.IsDir() {
 			if err := copyDir(s, d); err != nil {
 				return err
 			}
 			continue
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("copy dir: refusing non-regular file %s", s)
 		}
 		if err := copyFile(s, d); err != nil {
 			return err
@@ -128,9 +139,10 @@ func isLocalDir(path string) bool {
 // for cloning. It is selected only when a token is configured and mock mode is
 // off.
 type githubREST struct {
-	token   string
-	http    *http.Client
-	baseURL string
+	token         string
+	http          *http.Client
+	baseURL       string
+	writesAllowed bool // set only by package tests until a human approval flow exists
 }
 
 // newGitHubREST builds a real client bound to the given token.
@@ -148,6 +160,13 @@ func (g *githubREST) apiRoot() string {
 func (g *githubREST) Name() string { return "github" }
 func (g *githubREST) Live() bool   { return true }
 
+func (g *githubREST) requireWriteAuthorization() error {
+	if !g.writesAllowed {
+		return fmt.Errorf("refusing live GitHub write: exact-patch human approval and fork publication are not implemented")
+	}
+	return nil
+}
+
 func (g *githubREST) ParseURL(url string) (string, string, error) {
 	return parseGitHubURL(url)
 }
@@ -161,13 +180,53 @@ func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error
 		}
 		return dest, nil
 	}
-	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", url, dest)
+	owner, repo, err := parseGitHubURL(url)
+	if err != nil {
+		return "", fmt.Errorf("clone: refusing non-GitHub remote: %w", err)
+	}
+	canonicalURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
+	cloneCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(cloneCtx, "git", "-c", "credential.helper=", "clone", "--depth", "1", canonicalURL, dest)
+	cmd.Env = gitCloneEnvironment()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("clone: git clone %s: %w: %s", url, err, stderr.String())
+		return "", fmt.Errorf("clone: git clone %s: %w: %s", canonicalURL, err, stderr.String())
 	}
 	return dest, nil
+}
+
+// gitCloneEnvironment removes ambient Git configuration and repository paths
+// that could enable host-side filters, credential helpers, or workspace
+// redirection during checkout. Process basics such as PATH and system temp
+// settings are retained for platform compatibility.
+func gitCloneEnvironment() []string {
+	blocked := map[string]bool{
+		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
+		"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+		"GIT_COMMON_DIR": true, "GIT_PREFIX": true, "GIT_CEILING_DIRECTORIES": true,
+		"GIT_NAMESPACE": true, "GIT_EXEC_PATH": true, "GIT_EXTERNAL_DIFF": true, "GIT_SSH": true,
+		"GIT_SSH_COMMAND": true, "GIT_ASKPASS": true, "SSH_ASKPASS": true,
+	}
+	var env []string
+	for _, item := range os.Environ() {
+		key, _, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		upper := strings.ToUpper(key)
+		if strings.HasPrefix(upper, "GIT_CONFIG_") || upper == "GIT_CONFIG" || blocked[upper] || upper == "GIT_LFS_SKIP_SMUDGE" || upper == "GIT_TERMINAL_PROMPT" {
+			continue
+		}
+		env = append(env, item)
+	}
+	return append(env,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_LFS_SKIP_SMUDGE=1",
+	)
 }
 
 // do performs an authenticated request and decodes a 2xx JSON body into out
@@ -288,6 +347,9 @@ func (g *githubREST) DefaultBranch(ctx context.Context, owner, repo string) (str
 }
 
 func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name, expectedBaseSHA string) error {
+	if err := g.requireWriteAuthorization(); err != nil {
+		return err
+	}
 	if expectedBaseSHA == "" {
 		return fmt.Errorf("create branch: analyzed base commit SHA is required")
 	}
@@ -317,6 +379,9 @@ func (g *githubREST) CreateBranch(ctx context.Context, owner, repo, base, name, 
 }
 
 func (g *githubREST) CommitFile(ctx context.Context, owner, repo string, spec CommitSpec) error {
+	if err := g.requireWriteAuthorization(); err != nil {
+		return err
+	}
 	if !filepath.IsLocal(spec.Path) || spec.Path == "." {
 		return fmt.Errorf("commit file %q: path must be repository-relative", spec.Path)
 	}
@@ -375,6 +440,9 @@ func escapeGitHubPath(path string) string {
 }
 
 func (g *githubREST) CreatePR(ctx context.Context, owner, repo string, spec PRSpec) (int, string, error) {
+	if err := g.requireWriteAuthorization(); err != nil {
+		return 0, "", err
+	}
 	if spec.ExpectedBaseSHA == "" {
 		return 0, "", fmt.Errorf("create PR: analyzed base commit SHA is required")
 	}
@@ -408,6 +476,9 @@ func (g *githubREST) CreatePR(ctx context.Context, owner, repo string, spec PRSp
 }
 
 func (g *githubREST) CreateIssue(ctx context.Context, owner, repo, title, body string) (int, string, error) {
+	if err := g.requireWriteAuthorization(); err != nil {
+		return 0, "", err
+	}
 	payload := map[string]string{"title": title, "body": body}
 	var out struct {
 		Number  int    `json:"number"`

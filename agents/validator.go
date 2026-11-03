@@ -141,7 +141,7 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			lastLog = fmt.Sprintf("attempt %d: sandbox error: %v", attempt+1, serr)
 			continue
 		}
-		if res != nil && res.Success {
+		if ctx.Err() == nil && res.SuccessfulFor(spec) {
 			originalSum := sha256.Sum256(original)
 			patchedSum := sha256.Sum256([]byte(patched))
 			cand.PatchedFile = patched
@@ -153,23 +153,51 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			iss.Fix.Selected = &selected
 			iss.Validated = true
 			iss.Demoted = false
-			iss.ValidationLog = strings.TrimSpace(res.Logs + "\n" + res.Stdout)
+			iss.ValidationLog = strings.TrimSpace(boundedValidationText(res.Logs + "\n" + res.Stdout))
 			return
 		}
-		log := ""
-		if res != nil {
-			log = res.Stderr
-			if log == "" {
-				log = res.Logs
-			}
-		}
-		lastLog = fmt.Sprintf("attempt %d: syntax/test check failed: %s", attempt+1, log)
+		lastLog = fmt.Sprintf("attempt %d: %s", attempt+1, sandboxResultFailure(ctx.Err(), spec, res))
 	}
 
 	iss.Fix.Selected = nil
 	iss.Validated = false
 	iss.Demoted = true
 	iss.ValidationLog = lastLog
+}
+
+func sandboxResultFailure(ctxErr error, spec services.SandboxSpec, res *services.SandboxResult) string {
+	if ctxErr != nil {
+		return fmt.Sprintf("validation context ended: %v", ctxErr)
+	}
+	if res == nil {
+		return "sandbox returned no result"
+	}
+	if res.TimedOut {
+		return "sandbox command timed out"
+	}
+	if res.CommandsRun != len(spec.Commands) {
+		return fmt.Sprintf("sandbox returned %d completed commands; expected %d", res.CommandsRun, len(spec.Commands))
+	}
+	if res.ExitCode != 0 {
+		details := res.Stderr
+		if details == "" {
+			details = res.Logs
+		}
+		return fmt.Sprintf("sandbox command exited with code %d: %s", res.ExitCode, strings.TrimSpace(boundedValidationText(details)))
+	}
+	if !res.Success {
+		return "sandbox reported failure"
+	}
+	return "sandbox result was inconsistent"
+}
+
+const maxValidationLogBytes = 64 << 10
+
+func boundedValidationText(value string) string {
+	if len(value) <= maxValidationLogBytes {
+		return value
+	}
+	return value[:maxValidationLogBytes] + "\n[validation output truncated]"
 }
 
 func normalizeFunctionSource(source string) string {
