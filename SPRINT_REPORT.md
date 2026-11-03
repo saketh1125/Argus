@@ -3,6 +3,7 @@
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`
 Baseline commit: `0089d0779c00f53c4f45acfd2437e093a2cbd484`
+Checkpoint commit: `0c57dc7` (`Fail closed when isolated validation is unavailable`)
 Pull request: [#2 — Harden Argus validated GitHub patch pipeline](https://github.com/saketh1125/Argus/pull/2)
 
 ## Changes
@@ -42,7 +43,8 @@ Pull request: [#2 — Harden Argus validated GitHub patch pipeline](https://gith
 
 - PR #2 remains open and draft on `codex/pr-patch-safety`, targeting `main`; its head is still the baseline commit as of inspection.
 - GitHub reports no checks for that commit and no PR reviews.
-- The working tree was clean before this checkpoint. Changes are local and not yet committed or pushed.
+- The working tree was clean before this checkpoint. Commit `0c57dc7` is local and ahead of `origin/codex/pr-patch-safety` by one commit.
+- Push to `origin/codex/pr-patch-safety` was rejected by automatic approval review. The reason given was that authorization for the exact remote destination and source/workflow payload was not established. No workaround was attempted; PR #2 remains unchanged at the baseline head.
 
 ## Limitations and open Phase 0 work
 
@@ -53,4 +55,4 @@ Pull request: [#2 — Harden Argus validated GitHub patch pipeline](https://gith
 
 ## Next task
 
-Finish Phase 0: verify the isolated provider or keep validation unavailable, complete the adversarial safety coverage, push the current branch and confirm GitHub CI results, then reassess the exit gate.
+Finish Phase 0: verify the isolated provider or keep validation unavailable, complete adversarial safety coverage, obtain approval to push commit `0c57dc7` to `origin/codex/pr-patch-safety`, confirm GitHub CI results, then reassess the exit gate.

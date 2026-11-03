@@ -14,4 +14,5 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Post-change `go test ./...`, `go vet ./...`, `go build ./...`, and mock sample workflow passed. The mock workflow raised no PRs and demoted two fixes due unavailable isolated validation.
 - Formatting passed for changed Go files. A repository-wide scan found pre-existing unformatted files outside this change; they were not modified.
 - `go test -race ./...` could not start because CGO is disabled; no compiler was found.
+- Committed the checkpoint locally as `0c57dc7`. Push to `origin/codex/pr-patch-safety` was rejected by automatic approval review because the exact destination and source/workflow payload were not considered sufficiently authorized. No alternate publication route was attempted; PR #2 remains unchanged.
 - Phase 0 remains open. E2B behavior, more adversarial failure recovery, and remote CI results remain unverified.

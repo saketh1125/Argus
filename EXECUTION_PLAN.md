@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; `go test ./...`, `go vet ./...`, and `go build ./...` pass on Windows/AMD64. Host-local sandbox removed; mock run reports unavailable validation and demotes two fixes. CI workflow added locally. | Race test unavailable locally (`CGO_ENABLED=0`, no C compiler); E2B integration and remaining adversarial checks unverified; GitHub CI has not run for this working change. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; local checkpoint `0c57dc7`. `go test ./...`, `go vet ./...`, and `go build ./...` pass on Windows/AMD64. Host-local sandbox removed; mock run reports unavailable validation and demotes two fixes. CI workflow committed locally. | Race test unavailable locally (`CGO_ENABLED=0`, no C compiler); E2B integration and remaining adversarial checks unverified. Push to the existing PR branch was rejected by automatic approval review, so remote CI has not run. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -934,7 +934,7 @@ Continue **P0 — Baseline and critical safety fixes**. Do not start Phase 1 unt
 1. Verify the isolated provider API, cleanup guarantees and resource limits; do not count E2B as safe until its current integration is exercised and observed.
 2. Add/execute adversarial tests for no host execution, generated-command rejection, persistence failures and interrupted/failed validation.
 3. Confirm patch provenance and complete-file rejection tests cover stale and unauthorized changes.
-4. Push the CI workflow and this safety change on the existing PR branch, then record actual GitHub check results.
+4. After approval, push local commit `0c57dc7` to the existing PR branch and record actual GitHub check results.
 5. Reassess every P0 acceptance criterion and stop at the P0 exit gate.
 
 ---
