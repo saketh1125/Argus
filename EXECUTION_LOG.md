@@ -286,3 +286,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - E2B provider research rechecked current official materials: the vendor-maintained SDKs documented are JavaScript and Python; the Go SDK found is community-maintained. The sandbox factory remains unavailable with or without `E2B_API_KEY`; no host-execution fallback or unsupported dependency was introduced.
 - Focused collision tests, full Go tests, vet, build and diff check pass locally; build exits 0 with a restricted module-cache stat warning. GitHub Actions run [41695801609](https://github.com/saketh1125/Argus/actions/runs/41695801609) passed formatting, full tests, vet, race tests, native build and Windows AMD64 cross-build on `71033f8`. No credentials or live publication were used.
 - Updated estimate: 90% across 25 rows (22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED); `(22 + 0.5) / 25 = 90%`. Explicit mock/live distinction remains partial; E2B verification and exact-approval/fork publication remain blocked.
+
+## 2026-11-04 — Reject forged analyst provenance
+
+- Added `TestAnalystIgnoresForgedValidationAndProviderFields`. An adversarial model response attempts to inject validation success, live E2B provenance, validation logs and fake fix metadata; the analyst-created issue retains none of these trusted fields.
+- Focused test, full `go test ./... -count=1`, `go vet ./...`, `go build ./...` and `git diff --check` passed locally. Build exited 0 with a restricted Go module stat-cache warning.
+- Commit `cea1c59` passed CI [41697879198](https://github.com/saketh1125/Argus/actions/runs/41697879198): formatting, tests, vet, race, native build and Windows AMD64 cross-build. No credentials or live services were used.
+- Checklist estimate remains 90%: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED across 25 rows. E2B live behavior and exact-approval/fork publication remain blocked.

@@ -919,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Current checkpoint `a4e70bc`; implementation commit `71033f8` passed CI [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609), and current documentation checkpoint passed [#105](https://github.com/saketh1125/Argus/actions/runs/41696177324), including race and Windows AMD64 cross-build. PR #2 is open, draft and unmerged at `a4e70bc`. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Current tested checkpoint `cea1c59`; CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed formatting, tests, vet, race and native/Windows AMD64 builds. PR #2 is open, draft and unmerged at `cea1c59`. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -942,7 +942,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | Regression tests preserve source/siblings and reject stale source | VERIFIED | Validator and GitHub patch safety tests pass. |
 | GitHub write retry/partial-failure handling is bounded | VERIFIED | Write requests make a single attempt and surface uncertain outcomes; response size and client time are bounded. A deterministic branch collision now stops before commit/PR instead of generating a new branch that could duplicate an uncertain prior publication. Focused regression confirms one branch attempt and no commit or PR on collision. |
 | Sandbox results must account for every command and reject timeout/nonzero/cancellation/oversized output | VERIFIED | Validator requires success, aggregate and per-command zero exits, no timeout, exact command count, active context, and no more than 4 MiB of output; adversarial tests cover incomplete, contradictory, cancelled and oversized results. |
-| Validation provenance records the actual provider and gates publication | VERIFIED | Validator clears model-supplied provider claims, records the attempted adapter and live/mock mode, and patch preparation rejects missing or non-live provenance. Regression tests cover forged, missing, mock and accurate-provider reporting; run [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546) passed. |
+| Validation provenance records the actual provider and gates publication | VERIFIED | Analyst decoding ignores forged validation/provider/fix fields; `TestAnalystIgnoresForgedValidationAndProviderFields` covers this boundary. Validator also clears model-supplied provider claims, records the attempted adapter and live/mock mode, and patch preparation rejects missing or non-live provenance. CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed. |
 | Direct live GitHub client writes cannot bypass the PR agent | VERIFIED | Production client refuses branch, file, PR and issue writes before network calls; regression test confirms zero requests. |
 | Host Git is not executed during remote repository ingestion; local copies cannot read symlink targets | VERIFIED | Remote source arrives as a bounded REST archive and preprocessing executes no host Git process. The local copy fallback rejects symlinks and special files; preprocessing also skips symlink entries. The symlink regression executed in Ubuntu CI run #65; Windows local test skips because symlink creation requires an unavailable privilege. |
 
@@ -971,6 +971,12 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 - Official E2B materials currently document JavaScript and Python SDKs; the Go SDK found is community-maintained. The current SDK exposes explicit internet-access control and isolated microVMs, but its live behavior still cannot be established through credential-free mocks. No unsupported SDK dependency or unverified live adapter was added; the factory remains fail-closed.
 - Focused tests, full `go test ./...`, `go vet ./...`, and `go build ./...` pass locally. Build exits 0 with a restricted Go module stat-cache warning. GitHub Actions run [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609) passed formatting, tests, vet, race tests, native build and Windows AMD64 cross-build on `71033f8`.
 - Updated estimate: **90%** over 25 rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED; `(22 + 0.5) / 25 = 90%`. Only mock/live state remains partially verified; E2B live verification and exact-approval/fork publication remain blocked.
+
+### Forged analyst provenance regression — 2026-11-04
+
+- Added `TestAnalystIgnoresForgedValidationAndProviderFields`. An adversarial analyst response supplies `validated=true`, live E2B provenance, a validation log and fake fix metadata; the constructed issue retains none of those trusted fields.
+- Focused regression, full `go test ./... -count=1`, `go vet ./...`, `go build ./...` and `git diff --check` passed locally. Build exited 0 with the restricted Go module stat-cache warning. CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed all configured checks on `cea1c59`.
+- This adds regression evidence for the existing provenance guarantee; it does not enable sandbox execution or live publication. The estimate remains **90%**: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED across 25 equal-weight rows.
 
 ### Credential and verification inventory
 

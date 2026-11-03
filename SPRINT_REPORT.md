@@ -289,3 +289,9 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Official E2B project materials document JavaScript and Python SDKs; the Go SDK examined is community-maintained. A direct Go client remains unverified, so E2B stays disabled and repository code cannot fall back to host execution. No live credentials or unsupported dependency were used.
 - Focused tests, full `go test ./...`, `go vet ./...`, and `go build ./...` pass locally. Build exits 0 with a restricted module stat-cache warning. GitHub Actions run [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609) passed formatting, full tests, vet, race tests, native build and Windows AMD64 cross-build on `71033f8`.
 - Updated estimate: **90%** over 25 rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED; `(22 + 0.5) / 25 = 90%`. Explicit mock/live state remains partial; live E2B and exact-approval/fork publication remain blocked.
+
+## Forged analyst provenance regression — 2026-11-04
+
+- Added `TestAnalystIgnoresForgedValidationAndProviderFields`: an adversarial model response attempts to supply validation success, live E2B provenance, logs and a fake fix; the analyst-created issue contains none of those trusted fields.
+- Focused regression, full `go test ./... -count=1`, vet, build and diff check passed locally. Build exited 0 with the restricted Go module stat-cache warning. CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build on `cea1c59`.
+- This strengthens the provenance regression evidence without enabling sandbox execution or live writes. The estimate remains 90% across 25 rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED.
