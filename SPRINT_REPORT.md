@@ -295,3 +295,9 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Added `TestAnalystIgnoresForgedValidationAndProviderFields`: an adversarial model response attempts to supply validation success, live E2B provenance, logs and a fake fix; the analyst-created issue contains none of those trusted fields.
 - Focused regression, full `go test ./... -count=1`, vet, build and diff check passed locally. Build exited 0 with the restricted Go module stat-cache warning. CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build on `cea1c59`.
 - This strengthens the provenance regression evidence without enabling sandbox execution or live writes. The estimate remains 90% across 25 rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED.
+
+## Local-copy filesystem race hardening — 2026-11-04
+
+- Changed local directory ingestion to use rooted filesystem handles and verify each opened file/directory still matches the object inspected before use. Added deterministic tests that replace inspected files and directories with symlinks and require safe rejection.
+- CI [#112](https://github.com/saketh1125/Argus/actions/runs/41699606817) caught an unintended nondeterministic copy order: `File.ReadDir` returns filesystem order. Restored lexical ordering; follow-up CI [#114](https://github.com/saketh1125/Argus/actions/runs/41700207329) passed formatting, full tests, vet, race, native build and Windows AMD64 cross-build on `d764978`.
+- Focused tests, full local tests, vet, build and diff check pass. Local Windows cannot perform the rename used by the race tests, so they skip there; Linux CI ran them. No live services or credentials were used.

@@ -293,3 +293,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused test, full `go test ./... -count=1`, `go vet ./...`, `go build ./...` and `git diff --check` passed locally. Build exited 0 with a restricted Go module stat-cache warning.
 - Commit `cea1c59` passed CI [41697879198](https://github.com/saketh1125/Argus/actions/runs/41697879198): formatting, tests, vet, race, native build and Windows AMD64 cross-build. No credentials or live services were used.
 - Checklist estimate remains 90%: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED across 25 rows. E2B live behavior and exact-approval/fork publication remain blocked.
+
+## 2026-11-04 — Pin local copy reads to inspected entries
+
+- Closed a local-copy TOCTOU gap: path-based recursive reads could follow a directory or file swapped to a symlink after inspection. Copy now uses `os.Root` handles, verifies source identity after opening, and preserves lexical entry order.
+- Added deterministic file and directory replacement tests. Focused copy tests, full `go test ./... -count=1`, vet, build and diff check pass locally. Windows cannot perform the rename used by these tests in this environment; Linux CI executes them.
+- CI [#112](https://github.com/saketh1125/Argus/actions/runs/41699606817) caught the initially unsorted directory order; fixed in `d764978`. CI [#114](https://github.com/saketh1125/Argus/actions/runs/41700207329) then passed formatting, full tests, vet, race, native build and Windows AMD64 cross-build.
+- No live services or credentials were used. Checklist estimate remains 90%; live E2B and exact-approval/fork publication remain blocked.
