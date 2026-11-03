@@ -306,7 +306,7 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 
 ### Baseline and integration inventory
 
-- Local `HEAD` and read-only `git ls-remote` both identify `1199f701ddfa431a431c64192c25dff8a237d622`. GitHub read-only metadata confirms PR #2 remains open, draft, unmerged, and mergeable. Current-head Actions run [#117](https://github.com/saketh1125/Argus/actions/runs/41700509066) succeeded. `git fetch` could not write `.git/FETCH_HEAD` in this restricted checkout; `gh` has no authenticated session.
+- Local `HEAD` and read-only `git ls-remote` both identify `1199f701ddfa431a431c64192c25dff8a237d622`. GitHub read-only metadata confirms PR #2 remains open, draft, unmerged, and mergeable. Documentation checkpoint `628b05e` then passed Actions run [#118](https://github.com/saketh1125/Argus/actions/runs/41701781436). `git fetch` could not write `.git/FETCH_HEAD` in this restricted checkout; `gh` has no authenticated session.
 - `.env` is absent. Presence-only checks found no `GITHUB_TOKEN`, `NIM_API_KEY`, `E2B_API_KEY`, `JINA_API_KEY`, or `GEMINI_API_KEY`; `ARGUS_RUN_LIVE_NIM_TESTS` is false. No secret values were read or printed.
 - Missing GitHub/NIM credentials choose labelled mock clients. Missing E2B reports `validation unavailable`; supplying a synthetic E2B value does not enable the unverified sandbox. This is safe mock/unavailable behavior, not a live integration claim.
 
@@ -314,8 +314,8 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 
 - Credential-free and mock-backed: `go test ./services ./tools ./config . -count=1` — PASS; `go test ./... -count=1` — PASS; `go vet ./...` — PASS.
 - `go build ./...` — exit 0; Go emitted a restricted module stat-cache access warning.
-- Current-head CI #117 succeeded. GitHub PR #2 remains open/draft/unmerged. No live model, sandbox, or publication checks ran.
-- Local race tests remain unavailable with `CGO_ENABLED=0`; race verification is supplied by CI #117.
+- CI #118 passed formatting, full tests, vet, race, native build and Windows AMD64 cross-build. GitHub PR #2 remains open/draft/unmerged. No live model, sandbox, or publication checks ran.
+- Local race tests remain unavailable with `CGO_ENABLED=0`; race verification is supplied by CI #118.
 
 ### Status
 

@@ -919,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Current checkpoint `1199f70`; CI run [#117](https://github.com/saketh1125/Argus/actions/runs/41700509066) succeeded on this head. PR #2 remains open, draft and unmerged. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Current verified documentation checkpoint `628b05e`; CI run [#118](https://github.com/saketh1125/Argus/actions/runs/41701781436) passed every step. PR #2 remains open, draft and unmerged. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -933,7 +933,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | Requirement | Status | Evidence / limitation |
 |---|---|---|
 | Exact baseline and environment recorded | VERIFIED | Baseline and current remote head recorded above; Go 1.27.3, Windows/AMD64, `CGO_ENABLED=0`. |
-| Existing test/build outcomes documented accurately | VERIFIED | On `1199f70`, credential-free `go test ./... -count=1`, `go vet ./...`, and `go build ./...` passed; build exited 0 with a restricted module stat-cache access warning. Local race test cannot start because CGO is disabled; current-head CI run #117 succeeded. |
+| Existing test/build outcomes documented accurately | VERIFIED | On `1199f70`, credential-free `go test ./... -count=1`, `go vet ./...`, and `go build ./...` passed; build exited 0 with a restricted module stat-cache access warning. Local race test cannot start because CGO is disabled; CI #118 passed race and all other steps on documentation checkpoint `628b05e`. |
 | No arbitrary LLM-supplied command executes on host | VERIFIED | Validator uses deterministic commands and no host command runner; earlier CI and tests cover this boundary. |
 | No untrusted repository code executes outside genuine isolation | VERIFIED (fail closed) | Sandbox adapter removed; with or without E2B credentials it reports unavailable and refuses commands. No live sandbox execution is claimed. |
 | Missing integration credentials cannot enable unsafe fallbacks | VERIFIED | `TestMissingProviderCredentialsSelectVisibleMocksAndUnavailableValidation`, `TestMissingE2BSelectsUnavailableSandbox`, `TestE2BCredentialDoesNotEnableUnverifiedSandbox` and `TestUnavailableSandboxRefusesCommands` pass. Blank GitHub/NIM keys select labelled mocks; missing E2B yields an explicit unavailable error and no host execution. |
