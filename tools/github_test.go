@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -43,7 +44,10 @@ func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
 	source := t.TempDir()
 	link := filepath.Join(source, "linked-secret.txt")
 	if err := os.Symlink(outside, link); err != nil {
-		t.Skipf("symlink creation unavailable on this platform: %v", err)
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation unavailable on this platform: %v", err)
+		}
+		t.Fatalf("symlink creation must be available for this path-safety test: %v", err)
 	}
 	dest := filepath.Join(t.TempDir(), "copy")
 	if err := copyDir(source, dest); err == nil || !strings.Contains(err.Error(), "refusing symlink") {
