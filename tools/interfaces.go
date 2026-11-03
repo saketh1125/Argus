@@ -36,14 +36,22 @@ type CommitSpec struct {
 	Message                      string
 }
 
+// CloneResult identifies the extracted source tree and the immutable commit
+// whose archive produced it. Mock clones leave SnapshotCommitSHA empty.
+type CloneResult struct {
+	Path              string
+	SnapshotCommitSHA string
+}
+
 // GitHubClient performs all GitHub-side operations. The real adapter wraps
 // google/go-github; the mock records calls in memory and returns deterministic
 // URLs so the pipeline runs end-to-end without a token.
 type GitHubClient interface {
 	// ParseURL extracts owner/repo from a GitHub URL.
 	ParseURL(url string) (owner, repo string, err error)
-	// Clone shallow-clones the repo to a local directory and returns its path.
-	Clone(ctx context.Context, url, dest string) (string, error)
+	// Clone fetches a bounded source snapshot into dest and returns its path and
+	// pinned source commit when available.
+	Clone(ctx context.Context, url, dest string) (CloneResult, error)
 	// DefaultBranch returns the repo's default branch name.
 	DefaultBranch(ctx context.Context, owner, repo string) (string, error)
 	// CreateBranch creates branch `name` from `base`.

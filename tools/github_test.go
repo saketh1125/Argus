@@ -1,12 +1,15 @@
 package tools
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +18,43 @@ import (
 	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func responseFor(req *http.Request, status int, header http.Header, body []byte) *http.Response {
+	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(bytes.NewReader(body)), Request: req}
+}
+
+func makeTestTarGzip(t *testing.T, entries []struct {
+	name string
+	kind byte
+	body string
+}) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	for _, entry := range entries {
+		h := &tar.Header{Name: entry.name, Mode: 0o644, Typeflag: entry.kind, Size: int64(len(entry.body))}
+		if err := tw.WriteHeader(h); err != nil {
+			t.Fatal(err)
+		}
+		if entry.body != "" {
+			if _, err := tw.Write([]byte(entry.body)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
 
 func TestParseURL(t *testing.T) {
 	cases := []struct {
@@ -109,54 +149,106 @@ func TestGitHubCloneRejectsRemoteHelperURLs(t *testing.T) {
 	}
 }
 
-func TestBoundedBufferCapsGitCloneDiagnostics(t *testing.T) {
-	var output boundedBuffer
-	output.limit = 8
-
-	written := strings.Repeat("x", 1<<20)
-	n, err := output.Write([]byte(written))
-	if err != nil || n != len(written) {
-		t.Fatalf("Write returned (%d, %v), want full write (%d, nil)", n, err, len(written))
+func TestGitHubClonePinsArchiveAndDoesNotForwardToken(t *testing.T) {
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	archive := makeTestTarGzip(t, []struct {
+		name string
+		kind byte
+		body string
+	}{
+		{name: "repo-root/", kind: tar.TypeDir},
+		{name: "repo-root/src/main.go", kind: tar.TypeReg, body: "package main\n"},
+	})
+	var sawPinnedArchive, sawUnauthenticatedCDN bool
+	client := &githubREST{token: "test-token", baseURL: "https://api.github.test"}
+	client.http = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Host == "api.github.test" && req.URL.Path == "/repos/o/r":
+			return responseFor(req, http.StatusOK, make(http.Header), []byte(`{"default_branch":"main"}`)), nil
+		case req.URL.Host == "api.github.test" && req.URL.Path == "/repos/o/r/commits/main":
+			return responseFor(req, http.StatusOK, make(http.Header), []byte(`{"sha":"`+sha+`"}`)), nil
+		case req.URL.Host == "api.github.test" && req.URL.Path == "/repos/o/r/tarball/"+sha:
+			sawPinnedArchive = true
+			return responseFor(req, http.StatusFound, http.Header{"Location": []string{"https://codeload.github.com/o/r/legacy.tar.gz/" + sha}}, nil), nil
+		case req.URL.Host == "codeload.github.com":
+			sawUnauthenticatedCDN = req.Header.Get("Authorization") == ""
+			return responseFor(req, http.StatusOK, make(http.Header), archive), nil
+		default:
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+			return nil, nil
+		}
+	})}
+	dest := filepath.Join(t.TempDir(), "source")
+	got, err := client.Clone(context.Background(), "https://github.com/o/r", dest)
+	if err != nil {
+		t.Fatalf("Clone error: %v", err)
 	}
-	if output.data.Len() != output.limit {
-		t.Fatalf("retained %d bytes, want limit %d", output.data.Len(), output.limit)
+	if !sawPinnedArchive || !sawUnauthenticatedCDN {
+		t.Fatalf("pinned archive=%v unauthenticated CDN=%v", sawPinnedArchive, sawUnauthenticatedCDN)
 	}
-	if !output.truncated || !strings.Contains(output.String(), "stderr truncated") {
-		t.Fatalf("String() = %q, want a truncation marker", output.String())
+	if got.Path != dest || got.SnapshotCommitSHA != sha {
+		t.Fatalf("Clone result = %#v", got)
+	}
+	content, err := os.ReadFile(filepath.Join(dest, "src", "main.go"))
+	if err != nil || string(content) != "package main\n" {
+		t.Fatalf("extracted content = %q, %v", content, err)
 	}
 }
 
-func TestGitCloneArgsDisableCredentialHelpersAndHooks(t *testing.T) {
-	hooksDir := t.TempDir()
-	args := strings.Join(gitCloneArgs("https://github.com/owner/repo.git", "checkout", hooksDir), " ")
-	if !strings.Contains(args, "credential.helper=") || !strings.Contains(args, "core.hooksPath="+hooksDir) {
-		t.Fatalf("git clone must disable credential helpers and hooks, got args %q", args)
+func TestExtractBoundedTarGzipRejectsTraversalAndSkipsLinks(t *testing.T) {
+	for _, name := range []string{"root/../../outside.go", "root/C:/outside.go", "root\\outside.go"} {
+		t.Run(name, func(t *testing.T) {
+			archive := makeTestTarGzip(t, []struct {
+				name string
+				kind byte
+				body string
+			}{{name: name, kind: tar.TypeReg, body: "package p"}})
+			if err := extractBoundedTarGzip(bytes.NewReader(archive), t.TempDir()); err == nil {
+				t.Fatalf("unsafe path %q was accepted", name)
+			}
+		})
+	}
+	dest := t.TempDir()
+	archive := makeTestTarGzip(t, []struct {
+		name string
+		kind byte
+		body string
+	}{
+		{name: "root/link.go", kind: tar.TypeSymlink},
+		{name: "root/safe.go", kind: tar.TypeReg, body: "package safe"},
+	})
+	if err := extractBoundedTarGzip(bytes.NewReader(archive), dest); err != nil {
+		t.Fatalf("safe archive rejected: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "link.go")); !os.IsNotExist(err) {
+		t.Fatalf("archive link was extracted: %v", err)
 	}
 }
 
-func TestGitCloneEnvironmentDisablesAmbientGitExecutionConfig(t *testing.T) {
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "filter.hostile.smudge")
-	t.Setenv("GIT_CONFIG_VALUE_0", "touch marker")
-	t.Setenv("GIT_DIR", "C:\\outside\\.git")
-	t.Setenv("GIT_EXEC_PATH", "C:\\outside\\git-core")
-	t.Setenv("GIT_SSH_COMMAND", "touch marker")
-
-	got := make(map[string]string)
-	for _, item := range gitCloneEnvironment() {
-		key, value, ok := strings.Cut(item, "=")
-		if ok {
-			got[strings.ToUpper(key)] = value
+func TestExtractTarGzipEnforcesExpandedFileAndEntryBudgets(t *testing.T) {
+	archive := makeTestTarGzip(t, []struct {
+		name string
+		kind byte
+		body string
+	}{
+		{name: "root/a.go", kind: tar.TypeReg, body: "123456"},
+		{name: "root/b.go", kind: tar.TypeReg, body: "abcdef"},
+	})
+	t.Run("expanded bytes", func(t *testing.T) {
+		if err := extractTarGzipWithLimits(bytes.NewReader(archive), t.TempDir(), 16, 100, 10); err == nil {
+			t.Fatalf("extract error = %v, want expanded-byte limit", err)
 		}
-	}
-	for _, blocked := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_DIR", "GIT_EXEC_PATH", "GIT_SSH_COMMAND"} {
-		if _, ok := got[blocked]; ok {
-			t.Errorf("ambient %s must not reach git clone", blocked)
+	})
+	t.Run("aggregate regular bytes", func(t *testing.T) {
+		if err := extractTarGzipWithLimits(bytes.NewReader(archive), t.TempDir(), 10000, 10, 10); err == nil || !strings.Contains(err.Error(), "archive file bytes exceed limit") {
+			t.Fatalf("extract error = %v, want regular-file byte limit", err)
 		}
-	}
-	if got["GIT_CONFIG_NOSYSTEM"] != "1" || got["GIT_CONFIG_GLOBAL"] != os.DevNull || got["GIT_LFS_SKIP_SMUDGE"] != "1" || got["GIT_TERMINAL_PROMPT"] != "0" {
-		t.Fatalf("git clone safety environment incomplete: %+v", got)
-	}
+	})
+	t.Run("entry count", func(t *testing.T) {
+		if err := extractTarGzipWithLimits(bytes.NewReader(archive), t.TempDir(), 10000, 100, 1); err == nil || !strings.Contains(err.Error(), "entry count exceeds") {
+			t.Fatalf("extract error = %v, want entry-count limit", err)
+		}
+	})
 }
 
 func TestParseURLRejectsLookalikeHostsAndNonRepositoryPaths(t *testing.T) {
@@ -195,8 +287,8 @@ func TestMockCloneCopiesSampleRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Clone error: %v", err)
 	}
-	if got != dest {
-		t.Errorf("Clone returned %q, want %q", got, dest)
+	if got.Path != dest {
+		t.Errorf("Clone returned path %q, want %q", got.Path, dest)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "auth.py")); err != nil {
 		t.Errorf("expected auth.py copied into %s: %v", dest, err)

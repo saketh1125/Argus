@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
@@ -81,19 +79,17 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 		workdir = ""
 	}()
 
-	if _, err = p.gh.Clone(ctx, repoURL, workdir); err != nil {
+	cloneResult, cloneErr := p.gh.Clone(ctx, repoURL, workdir)
+	if cloneErr != nil {
+		err = cloneErr
 		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone %q: %w", repoURL, err)
 	}
-	snapshotSHA := ""
-	if p.gh.Live() {
-		output, shaErr := exec.CommandContext(ctx, "git", "-C", workdir, "rev-parse", "HEAD").Output()
-		if shaErr != nil {
-			return nil, workdir, owner, repo, fmt.Errorf("preprocessor: resolve analyzed Git commit: %w", shaErr)
-		}
-		snapshotSHA = strings.TrimSpace(string(output))
-		if len(snapshotSHA) != 40 {
-			return nil, workdir, owner, repo, fmt.Errorf("preprocessor: invalid analyzed Git commit SHA")
-		}
+	if cloneResult.Path != "" && filepath.Clean(cloneResult.Path) != filepath.Clean(workdir) {
+		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone returned an unexpected source path")
+	}
+	snapshotSHA := cloneResult.SnapshotCommitSHA
+	if p.gh.Live() && len(snapshotSHA) != 40 {
+		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: live clone did not provide an immutable commit SHA")
 	}
 	p.rep.SetStage(models.StageIngest, 20)
 
@@ -103,7 +99,12 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	cands, oversizedFiles := collectSourceCandidates(workdir, p.parser)
 
 	// Sort by modification time descending, take the top MaxFiles.
-	sort.Slice(cands, func(i, j int) bool { return cands[i].mod > cands[j].mod })
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].mod != cands[j].mod {
+			return cands[i].mod > cands[j].mod
+		}
+		return cands[i].rel < cands[j].rel
+	})
 	maxFiles := p.cfg.MaxFiles
 	if maxFiles > 0 && len(cands) > maxFiles {
 		cands = cands[:maxFiles]

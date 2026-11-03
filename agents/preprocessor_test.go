@@ -75,12 +75,12 @@ type partialCloneFailure struct {
 	dest string
 }
 
-func (g *partialCloneFailure) Clone(_ context.Context, _, dest string) (string, error) {
+func (g *partialCloneFailure) Clone(_ context.Context, _, dest string) (tools.CloneResult, error) {
 	g.dest = dest
 	if err := os.WriteFile(filepath.Join(dest, "partial-pack-data"), []byte("partial"), 0o600); err != nil {
-		return "", err
+		return tools.CloneResult{}, err
 	}
-	return "", fmt.Errorf("synthetic interrupted clone")
+	return tools.CloneResult{}, fmt.Errorf("synthetic interrupted clone")
 }
 
 func TestPreprocessorCleansWorkdirWhenCloneFails(t *testing.T) {

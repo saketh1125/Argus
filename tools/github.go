@@ -1,11 +1,13 @@
 package tools
 
 // github.go provides two GitHubClient adapters: a real REST client built on
-// net/http + os/exec git (no SDK), and an in-memory mock that records calls and
+// net/http (no SDK), and an in-memory mock that records calls and
 // returns deterministic artifacts so the pipeline runs end-to-end offline.
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -16,7 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,9 +30,12 @@ import (
 const apiBase = "https://api.github.com"
 
 const maxGitHubResponseBytes = 8 << 20
-const maxGitCloneStderrBytes = 64 << 10
 const maxLocalCopyBytes int64 = 256 << 20
 const maxLocalCopyEntries = 100_000
+const maxArchiveCompressedBytes int64 = 128 << 20
+const maxArchiveExpandedBytes int64 = 384 << 20
+const maxArchiveFileBytes int64 = 256 << 20
+const maxArchiveEntries = 100_000
 
 // sampleRepoPath is the deterministic buggy source the mock clones when no real
 // local directory is provided.
@@ -225,106 +230,215 @@ func (g *githubREST) ParseURL(url string) (string, string, error) {
 	return parseGitHubURL(url)
 }
 
-// Clone shallow-clones url into dest. When url is an existing local directory it
-// is copied instead, which keeps tests and reruns hermetic.
-func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error) {
-	if isLocalDir(url) {
-		if err := copyDir(url, dest); err != nil {
-			return "", fmt.Errorf("clone: copy local repo: %w", err)
+// Clone copies a local test source or extracts a bounded archive pinned to an
+// immutable GitHub commit. It does not execute Git on the host.
+func (g *githubREST) Clone(ctx context.Context, repoURL, dest string) (CloneResult, error) {
+	if isLocalDir(repoURL) {
+		if err := copyDir(repoURL, dest); err != nil {
+			return CloneResult{}, fmt.Errorf("clone: copy local repo: %w", err)
 		}
-		return dest, nil
+		return CloneResult{Path: dest}, nil
 	}
-	owner, repo, err := parseGitHubURL(url)
+	owner, repo, err := parseGitHubURL(repoURL)
 	if err != nil {
-		return "", fmt.Errorf("clone: refusing non-GitHub remote: %w", err)
+		return CloneResult{}, fmt.Errorf("clone: refusing non-GitHub remote: %w", err)
 	}
-	canonicalURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 	cloneCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	hooksDir, err := os.MkdirTemp("", "argus-empty-git-hooks-")
+	var repository struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := g.do(cloneCtx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s", g.apiRoot(), owner, repo), nil, &repository); err != nil {
+		return CloneResult{}, fmt.Errorf("clone: read repository metadata: %w", err)
+	}
+	if repository.DefaultBranch == "" || strings.ContainsAny(repository.DefaultBranch, "\\\x00") {
+		return CloneResult{}, fmt.Errorf("clone: GitHub returned an invalid default branch")
+	}
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+	commitURL := fmt.Sprintf("%s/repos/%s/%s/commits/%s", g.apiRoot(), owner, repo, url.PathEscape(repository.DefaultBranch))
+	if err := g.do(cloneCtx, http.MethodGet, commitURL, nil, &commit); err != nil {
+		return CloneResult{}, fmt.Errorf("clone: resolve default branch commit: %w", err)
+	}
+	if !regexp.MustCompile(`^[0-9a-fA-F]{40}$`).MatchString(commit.SHA) {
+		return CloneResult{}, fmt.Errorf("clone: GitHub returned an invalid commit SHA")
+	}
+	if err := g.downloadArchive(cloneCtx, owner, repo, strings.ToLower(commit.SHA), dest); err != nil {
+		return CloneResult{}, err
+	}
+	return CloneResult{Path: dest, SnapshotCommitSHA: strings.ToLower(commit.SHA)}, nil
+}
+
+func (g *githubREST) downloadArchive(ctx context.Context, owner, repo, sha, dest string) error {
+	archiveURL := fmt.Sprintf("%s/repos/%s/%s/tarball/%s", g.apiRoot(), owner, repo, sha)
+	client := *g.http
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("clone: create empty hooks directory: %w", err)
+		return fmt.Errorf("clone: build archive request: %w", err)
 	}
-	defer os.RemoveAll(hooksDir)
-	cmd := exec.CommandContext(cloneCtx, "git", gitCloneArgs(canonicalURL, dest, hooksDir)...)
-	cmd.Env = gitCloneEnvironment()
-	var stderr boundedBuffer
-	stderr.limit = maxGitCloneStderrBytes
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("clone: git clone %s: %w: %s", canonicalURL, err, stderr.String())
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("clone: request archive: %w", err)
 	}
-	return dest, nil
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusMovedPermanently && resp.StatusCode != http.StatusTemporaryRedirect {
+		return fmt.Errorf("clone: archive endpoint returned HTTP %d", resp.StatusCode)
+	}
+	location, err := url.Parse(resp.Header.Get("Location"))
+	if err != nil || location.Scheme != "https" || !strings.EqualFold(location.Hostname(), "codeload.github.com") || location.Port() != "" || location.User != nil {
+		return fmt.Errorf("clone: archive endpoint returned an untrusted redirect")
+	}
+	// Never forward the GitHub token to codeload. Enforce both wire bytes and
+	// decompressed stream bytes while extracting the untrusted tarball.
+	archiveReq, err := http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
+	if err != nil {
+		return fmt.Errorf("clone: build download request: %w", err)
+	}
+	archiveReq.Header.Set("Accept-Encoding", "identity")
+	archiveResp, err := client.Do(archiveReq)
+	if err != nil {
+		return fmt.Errorf("clone: download archive: %w", err)
+	}
+	defer archiveResp.Body.Close()
+	if archiveResp.StatusCode != http.StatusOK || archiveResp.Uncompressed || archiveResp.Header.Get("Content-Encoding") != "" {
+		return fmt.Errorf("clone: archive download returned an invalid response")
+	}
+	if archiveResp.ContentLength > maxArchiveCompressedBytes {
+		return fmt.Errorf("clone: compressed archive exceeds limit")
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return fmt.Errorf("clone: create destination: %w", err)
+	}
+	compressed := &limitCounterReader{r: archiveResp.Body, remaining: maxArchiveCompressedBytes}
+	if err := extractBoundedTarGzip(compressed, dest); err != nil {
+		return fmt.Errorf("clone: extract bounded archive: %w", err)
+	}
+	if compressed.exceeded {
+		return fmt.Errorf("clone: compressed archive exceeds limit")
+	}
+	return nil
 }
 
-// boundedBuffer retains only the first limit bytes while reporting successful
-// writes to subprocesses. This bounds diagnostics without causing the child to
-// fail with a short-write error when it emits more output than we retain.
-type boundedBuffer struct {
-	data      bytes.Buffer
-	limit     int
-	truncated bool
+type limitCounterReader struct {
+	r         io.Reader
+	remaining int64
+	exceeded  bool
 }
 
-func (b *boundedBuffer) Write(p []byte) (int, error) {
-	remaining := b.limit - b.data.Len()
-	if remaining > 0 {
-		if len(p) > remaining {
-			_, _ = b.data.Write(p[:remaining])
-		} else {
-			_, _ = b.data.Write(p)
+func (r *limitCounterReader) Read(p []byte) (int, error) {
+	if r.remaining < 0 {
+		r.exceeded = true
+		return 0, fmt.Errorf("input exceeds byte limit")
+	}
+	if int64(len(p)) > r.remaining+1 {
+		p = p[:r.remaining+1]
+	}
+	n, err := r.r.Read(p)
+	if int64(n) > r.remaining {
+		r.exceeded = true
+		return n, fmt.Errorf("input exceeds byte limit")
+	}
+	r.remaining -= int64(n)
+	return n, err
+}
+
+func extractBoundedTarGzip(input io.Reader, dest string) error {
+	return extractTarGzipWithLimits(input, dest, maxArchiveExpandedBytes, maxArchiveFileBytes, maxArchiveEntries)
+}
+
+func extractTarGzipWithLimits(input io.Reader, dest string, maxExpanded, maxFileBytes int64, maxEntries int) error {
+	gz, err := gzip.NewReader(input)
+	if err != nil {
+		return fmt.Errorf("open gzip: %w", err)
+	}
+	defer gz.Close()
+	bounded := &limitCounterReader{r: gz, remaining: maxExpanded}
+	tr := tar.NewReader(bounded)
+	root := ""
+	entries := 0
+	var fileBytes int64
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
 		}
-	}
-	if len(p) > remaining {
-		b.truncated = true
-	}
-	return len(p), nil
-}
-
-func (b *boundedBuffer) String() string {
-	if b.truncated {
-		return b.data.String() + "\n...[git clone stderr truncated]"
-	}
-	return b.data.String()
-}
-
-func gitCloneArgs(remote, dest, hooksDir string) []string {
-	return []string{
-		"-c", "credential.helper=", "-c", "core.hooksPath=" + hooksDir,
-		"clone", "--depth", "1", remote, dest,
-	}
-}
-
-// gitCloneEnvironment removes ambient Git configuration and repository paths
-// that could enable host-side filters, credential helpers, or workspace
-// redirection during checkout. Process basics such as PATH and system temp
-// settings are retained for platform compatibility.
-func gitCloneEnvironment() []string {
-	blocked := map[string]bool{
-		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
-		"GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
-		"GIT_COMMON_DIR": true, "GIT_PREFIX": true, "GIT_CEILING_DIRECTORIES": true,
-		"GIT_NAMESPACE": true, "GIT_EXEC_PATH": true, "GIT_EXTERNAL_DIFF": true, "GIT_SSH": true,
-		"GIT_SSH_COMMAND": true, "GIT_ASKPASS": true, "SSH_ASKPASS": true,
-	}
-	var env []string
-	for _, item := range os.Environ() {
-		key, _, ok := strings.Cut(item, "=")
-		if !ok {
+		if err != nil {
+			return fmt.Errorf("read tar header: %w", err)
+		}
+		entries++
+		if entries > maxEntries {
+			return fmt.Errorf("archive entry count exceeds limit")
+		}
+		name := strings.TrimSuffix(h.Name, "/")
+		clean := path.Clean(name)
+		if clean == "." || strings.HasPrefix(clean, "../") || path.IsAbs(name) || strings.Contains(name, "\\") || strings.ContainsRune(name, '\x00') || clean != name || !filepath.IsLocal(filepath.FromSlash(clean)) {
+			return fmt.Errorf("archive contains unsafe path")
+		}
+		parts := strings.SplitN(clean, "/", 2)
+		if root == "" {
+			root = parts[0]
+		} else if parts[0] != root {
+			return fmt.Errorf("archive contains multiple roots")
+		}
+		if len(parts) < 2 {
 			continue
 		}
-		upper := strings.ToUpper(key)
-		if strings.HasPrefix(upper, "GIT_CONFIG_") || upper == "GIT_CONFIG" || blocked[upper] || upper == "GIT_LFS_SKIP_SMUDGE" || upper == "GIT_TERMINAL_PROMPT" {
-			continue
+		rel := filepath.FromSlash(parts[1])
+		if !filepath.IsLocal(rel) {
+			return fmt.Errorf("archive contains unsafe path")
 		}
-		env = append(env, item)
+		target := filepath.Join(dest, rel)
+		switch h.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if h.Size < 0 || h.Size > maxFileBytes-fileBytes {
+				return fmt.Errorf("archive file bytes exceed limit")
+			}
+			fileBytes += h.Size
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.CopyN(f, tr, h.Size)
+			closeErr := f.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			if h.Mode&0o111 != 0 {
+				if err := os.Chmod(target, 0o755); err != nil {
+					return err
+				}
+			}
+		case tar.TypeSymlink, tar.TypeLink:
+			// Skip links entirely; preprocessing indexes only regular files.
+		default:
+			return fmt.Errorf("archive contains unsupported entry type")
+		}
 	}
-	return append(env,
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_LFS_SKIP_SMUDGE=1",
-	)
+	if root == "" {
+		return fmt.Errorf("archive contains no repository root")
+	}
+	// Consume through gzip EOF so checksum/trailing expansion errors are detected.
+	if _, err := io.Copy(io.Discard, bounded); err != nil {
+		return err
+	}
+	if bounded.exceeded {
+		return fmt.Errorf("expanded archive exceeds limit")
+	}
+	return nil
 }
 
 // do performs an authenticated request and decodes a 2xx JSON body into out
@@ -630,16 +744,16 @@ func (m *mockGitHub) ParseURL(url string) (string, string, error) {
 // Clone copies an existing local directory when url points at one; otherwise it
 // copies the bundled sample repo so the pipeline always has real, deterministic
 // buggy source to analyze.
-func (m *mockGitHub) Clone(ctx context.Context, url, dest string) (string, error) {
+func (m *mockGitHub) Clone(ctx context.Context, url, dest string) (CloneResult, error) {
 	src := sampleRepoPath
 	if isLocalDir(url) {
 		src = url
 	}
 	if err := copyDir(src, dest); err != nil {
-		return "", fmt.Errorf("mock clone: %w", err)
+		return CloneResult{}, fmt.Errorf("mock clone: %w", err)
 	}
 	m.record(ghAction{Kind: "clone", Detail: src + " -> " + dest})
-	return dest, nil
+	return CloneResult{Path: dest}, nil
 }
 
 func (m *mockGitHub) DefaultBranch(ctx context.Context, owner, repo string) (string, error) {

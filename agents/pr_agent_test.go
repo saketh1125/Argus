@@ -25,8 +25,8 @@ type captureGitHub struct {
 }
 
 func (c *captureGitHub) ParseURL(string) (string, string, error) { return "o", "r", nil }
-func (c *captureGitHub) Clone(context.Context, string, string) (string, error) {
-	return "", nil
+func (c *captureGitHub) Clone(context.Context, string, string) (tools.CloneResult, error) {
+	return tools.CloneResult{}, nil
 }
 func (c *captureGitHub) DefaultBranch(context.Context, string, string) (string, error) {
 	return "main", nil

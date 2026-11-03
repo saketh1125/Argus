@@ -268,3 +268,10 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Commit `6c7dbf4022aaa597612f580d01b6dd2726f5b593` passed CI run [41689430471](https://github.com/saketh1125/Argus/actions/runs/41689430471): formatting, full tests, vet, race, native build and Windows AMD64 cross-build all passed.
 - PR #2 remains open, draft and unmerged at `6c7dbf4`; local branch is clean and synchronized.
 - Current estimate: **86%** across 25 equal-weight rows: 21 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 3 BLOCKED; `(21 + 0.5) / 25 = 86%`. The partial row is explicit mock/live state. Blockers are remote Git transfer quota, live E2B verification, and exact-patch approval/fork publication.
+
+## Bounded remote archive ingestion — 2026-11-03
+
+- Replaced live host `git clone` with GitHub REST default-branch and commit resolution, then requested an archive pinned to that immutable commit SHA. Preprocessing now gets the analyzed SHA directly from the clone result and no longer executes host Git.
+- Enforced a 128 MiB compressed transfer cap, 384 MiB expanded stream cap, 256 MiB total regular-file cap, 100,000-entry cap and two-minute context deadline. Only HTTPS redirects to `codeload.github.com` are accepted, and the GitHub bearer token is not sent to codeload. Extraction rejects traversal and unsupported special files, and skips symlinks/hard links.
+- Added mocked REST/archive regressions for commit pinning, token isolation, path traversal, link handling and expansion/file/entry limits. `go test ./...`, `go vet ./...`, `go build ./...` and `git diff --check` pass locally. Build printed a restricted module stat-cache access warning but exited successfully. Current-head CI is pending.
+- Interim estimate: **88%** across 25 equal-weight rows: 21 VERIFIED, 2 PARTIALLY VERIFIED at half weight and 2 BLOCKED; `(21 + 2×0.5) / 25 = 88%`. Current-head CI and explicit mock/live state are partial; E2B live verification and exact-patch approval/fork publication remain blocked.

@@ -265,3 +265,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - CI run [41689430471](https://github.com/saketh1125/Argus/actions/runs/41689430471) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build; every step succeeded.
 - The aggregate byte, exact-limit and entry-budget tests now pass CI. PR #2 is open/draft/unmerged at `6c7dbf4`; working tree is clean and synchronized.
 - Corrected checklist status is 86%: 21 VERIFIED, 1 PARTIALLY VERIFIED at half credit and 3 BLOCKED out of 25 rows. Remote Git transfer quota, E2B live execution and exact-patch approval/fork publication remain outstanding.
+
+## 2026-11-03 — Bounded remote archive ingestion
+
+- Replaced live host Git clone with GitHub REST metadata lookup and an archive request pinned to the resolved commit SHA. The preprocessor takes provenance from `CloneResult` and no longer runs `git rev-parse` on the host.
+- The remote archive path caps compressed bytes at 128 MiB, expanded bytes at 384 MiB, regular-file bytes at 256 MiB, entries at 100,000, and total duration at two minutes. Redirects are restricted to HTTPS `codeload.github.com`; GitHub authorization is never forwarded to that host. Path traversal and special files are rejected; symlinks and hard links are skipped.
+- Added mock HTTP and extraction regressions covering pinned SHA, redirect token isolation, traversal, symlinks, and expanded/file/entry limits. `go test ./...`, `go vet ./...`, `go build ./...` and `git diff --check` pass locally. Build emitted a restricted module stat-cache access warning but exited 0. Current-head CI is pending; no live credentials or sandbox were used.
+- Interim estimate: 88% across 25 rows: 21 VERIFIED, 2 PARTIALLY VERIFIED, 2 BLOCKED; `(21 + 2×0.5) / 25 = 88%`. CI is pending; E2B live behavior and exact-patch approval/fork publication remain blocked.
