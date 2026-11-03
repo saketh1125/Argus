@@ -20,6 +20,12 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - `git diff --check` — PASS; Git emitted expected Windows line-ending conversion warnings.
 - P0 remains in progress. E2B live API/isolation/lifecycle and exact-patch approval/fork publication remain blocked; follow-up CI must run after push.
 
+## 2026-11-03 — Push and CI confirmation
+
+- Committed the follow-up as `a039095fbb517e90fcda430d3806f056ea79f6a9` and pushed it fast-forward to `origin/codex/pr-patch-safety` after checking the remote still pointed to `6e7dc00`.
+- PR #2 remains open, draft and unmerged; its head is `a039095`.
+- GitHub Actions run [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) completed successfully on the audit commit: formatting, `go test ./...`, vet, race tests, native build and Windows AMD64 build passed.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

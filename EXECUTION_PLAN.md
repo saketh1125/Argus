@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; current remote before this audit `6e7dc0033438d12c03eed016640f3e69278ecf3d`. Local full tests, vet, targeted regressions, and mock run pass. CI run [#29](https://github.com/saketh1125/Argus/actions/runs/41652050754) passed on prior head `6e7dc00`; follow-up CI for this audit is pending push. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; audit code commit `a039095fbb517e90fcda430d3806f056ea79f6a9`. Local full tests, vet, targeted regressions, and mock run pass. GitHub Actions [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) passed formatting, tests, vet, race, native build and Windows AMD64 build on `a039095`. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -941,7 +941,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | Regression tests preserve source/siblings and reject stale source | VERIFIED | Validator and GitHub patch safety tests pass. |
 | GitHub write retry/partial-failure handling is bounded | VERIFIED | Write requests make a single attempt and surface uncertain outcomes; response size and client time are bounded. Focused mocked HTTP tests pass. |
 | Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
-| CI required checks pass on this audit's code | PARTIALLY VERIFIED | Prior head `6e7dc00` passed run #29. New code awaits pushed-commit CI. |
+| CI required checks pass on this audit's code | VERIFIED | Run [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) passed formatting, tests, vet, race, native build and Windows AMD64 build on `a039095`. |
 | Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | No `E2B_API_KEY`; old unverified adapter was removed from selection and implementation. Credential presence alone will not re-enable it. |
 | Exact-patch human approval and fork-based contribution publication | BLOCKED | Not implemented. Live writes now fail closed; no credentials or live publication tests were used. |
 

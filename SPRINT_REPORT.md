@@ -2,7 +2,7 @@
 
 ## Follow-up audit — 2026-11-03
 
-Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`); PR #2 open, draft and unmerged. This follow-up is being prepared for the same branch; its commit and CI result will be recorded after push.
+Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`). Follow-up code commit: `a039095fbb517e90fcda430d3806f056ea79f6a9`; PR #2 remains open, draft and unmerged.
 
 ### High-risk findings and resolutions
 
@@ -23,14 +23,14 @@ The Windows checkout has no `.env`; presence checks showed all integration crede
 - `go test ./...` — PASS.
 - `go vet ./...` — PASS.
 - `go build ./...` — exit 0; Go printed a restricted module stat-cache access warning.
-- `go test -race ./...` — BLOCKED locally: `CGO_ENABLED=0`; Go requires CGO. Prior GitHub Actions run #29 passed race tests on the previous head; new code awaits CI.
+- `go test -race ./...` — BLOCKED locally: `CGO_ENABLED=0`; Go requires CGO. GitHub Actions run [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) passed race tests on commit `a039095`.
 - `FORCE_MOCK=true go run . --repo ./testdata/sample-repo --no-dashboard` — PASS. Banner identified all mocks and `sandbox=unavailable`; 3 candidates, 0 PRs, 2 demoted. The summary URL is an in-memory mock artifact.
 - `git diff --check` — PASS (line-ending conversion warnings only).
 - Live E2B, GitHub publication and NIM checks — NOT RUN; credentials are absent, and publication/sandbox live paths remain disabled.
 
 ### Status
 
-P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, and no-side-effect live publication refusal are verified. Real E2B execution and exact-patch approval/fork publishing remain blockers. CI for the follow-up commit is pending.
+P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effect live publication refusal, and CI are verified. Real E2B execution and exact-patch approval/fork publishing remain blockers.
 
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`
