@@ -960,7 +960,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 ### Current next action
 
-Push this reviewed checkpoint (user approved), verify CI on the new head, then keep P0 open until E2B can be safely exercised and exact-patch human approval/fork publication are implemented or explicitly removed from Phase 0 scope by the project owner.
+Keep repository-code execution and live publication disabled. The next highest-value action is to implement and verify a current E2B integration with bounded resources, strict result decoding, teardown reporting and network restrictions. Live verification requires `E2B_API_KEY` and the user's explicit authorization to use it; until then, proceed only with credential-free protocol tests and preserve the unavailable behavior. Exact-patch approval and fork-based publication remain required before live writes can be enabled.
 
 ---
 

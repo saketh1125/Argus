@@ -26,6 +26,13 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - PR #2 remains open, draft and unmerged; its head is `a039095`.
 - GitHub Actions run [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) completed successfully on the audit commit: formatting, `go test ./...`, vet, race tests, native build and Windows AMD64 build passed.
 
+## 2026-11-03 — Documentation checkpoint CI
+
+- Recorded the successful audit CI result in `EXECUTION_PLAN.md` and `SPRINT_REPORT.md`, and replaced the completed push task with the current E2B verification blocker.
+- Documentation checkpoint commit `3d94f81e6046bbea45ade8289c343231cd58a4b6` was pushed fast-forward to `origin/codex/pr-patch-safety`.
+- PR #2 remains open, draft and unmerged at `3d94f81`.
+- GitHub Actions run [#33](https://github.com/saketh1125/Argus/actions/runs/41657123955) completed successfully on that documentation checkpoint.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.
