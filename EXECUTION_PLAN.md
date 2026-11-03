@@ -372,7 +372,7 @@ Suggested checks (adapt to repository scripts; inspect git status before formatt
 - [VERIFIED] Regression tests cover source mismatch, unrelated-code preservation, sandbox cancellation/results, and GitHub write uncertainty.
 - [VERIFIED] Successful sandbox attempts record the actual provider and live/mock mode; failed attempts clear model-supplied validation claims, and publication rejects missing or non-live sandbox provenance.
 - [PARTIALLY VERIFIED] Mock/live adapter state is explicit; mock mode is visible, while no real sandbox provider is enabled.
-- [VERIFIED] CI required checks pass on the latest pushed checkpoint. Run [#47](https://github.com/saketh1125/Argus/actions/runs/41663259463) passed formatting, tests, vet, race, native build, and Windows AMD64 build on `e5c67fa`.
+- [VERIFIED] CI required checks pass on the latest pushed implementation. Run [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546) passed formatting, tests, vet, race, native build, and Windows AMD64 build on `ee0c9c8`.
 
 ### Exit gate
 
@@ -919,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; implementation commit `f22c54e7841e91e4b929bf0d54e24f67b8df96cb` passed CI [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674). Latest pushed checkpoint `e5c67fa` passed CI [#47](https://github.com/saketh1125/Argus/actions/runs/41663259463). | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; implementation commit `f22c54e7841e91e4b929bf0d54e24f67b8df96cb` passed CI [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674). Latest implementation `ee0c9c8` passed CI [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546). | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -945,7 +945,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | Direct live GitHub client writes cannot bypass the PR agent | VERIFIED | Production client refuses branch, file, PR and issue writes before network calls; regression test confirms zero requests. |
 | Host Git clone cannot invoke configured filters/helpers or copy symlink targets | VERIFIED | Clone accepts only canonical GitHub HTTPS URLs, disables ambient system/global/config helper settings, credential helpers, hooks and LFS smudge, and rejects local symlinks/special files. CI run #41 passed the Linux symlink and clone tests. |
 | Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
-| CI required checks pass on this audit's code and checkpoint | VERIFIED | Run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed all configured checks on implementation commit `f22c54e`; run [#47](https://github.com/saketh1125/Argus/actions/runs/41663259463) passed all configured checks on pushed checkpoint `e5c67fa`. |
+| CI required checks pass on this audit's code and checkpoint | VERIFIED | Run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed all configured checks on implementation commit `f22c54e`; run [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546) passed all configured checks on `ee0c9c8`. |
 | Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | No `E2B_API_KEY`; old unverified adapter was removed. The [official E2B project quickstart](https://github.com/e2b-dev/E2B#run-your-first-sandbox) documents JavaScript/Python SDKs; the Go SDK located in this audit identifies itself as [unofficial and community-maintained](https://github.com/eric642/e2b-go-sdk#e2b-go-sdk). No unreviewed Go dependency was selected. |
 | Exact-patch human approval and fork-based contribution publication | BLOCKED | Not implemented. Live writes now fail closed; no credentials or live publication tests were used. |
 

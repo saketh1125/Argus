@@ -86,6 +86,12 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - CI and push for this implementation are pending. No live credentials or publication were used; E2B remains disabled.
 - Reviewed current E2B SDK sources: the [official project quickstart](https://github.com/e2b-dev/E2B#run-your-first-sandbox) lists JavaScript/Python; the Go SDK located identifies itself as [unofficial and community-maintained](https://github.com/eric642/e2b-go-sdk#e2b-go-sdk). No package was added because this provider choice needs review.
 
+## 2026-11-03 — Validation provenance CI confirmation
+
+- Pushed `ee0c9c8d0d9816775ef7a8565aa75d4565b13534` fast-forward to the PR branch.
+- GitHub Actions [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546) passed all configured checks on the validation-provenance implementation.
+- PR #2 remains open, draft and unmerged; E2B and live publication remain disabled.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.
