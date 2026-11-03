@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
@@ -118,8 +117,8 @@ func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated [
 }
 
 // raisePR creates the branch, commits the rewritten function, and opens the PR.
-// If the branch already exists (422 from GitHub), a timestamp suffix is appended
-// and the creation is retried once — preventing collision on re-runs.
+// An existing deterministic branch is treated as an uncertain prior attempt;
+// it is never bypassed by generating a fresh branch name and retrying.
 func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base, baseSHA string, iss *models.Issue) (models.PRResult, error) {
 	commit, err := validatedCommitSpec(iss)
 	if err != nil {
@@ -131,15 +130,7 @@ func (p *PRAgent) raisePR(ctx context.Context, owner, repo, base, baseSHA string
 		iss.LineStart)
 
 	if err := p.gh.CreateBranch(ctx, owner, repo, base, branch, baseSHA); err != nil {
-		if strings.Contains(err.Error(), "422") || strings.Contains(err.Error(), "already exists") {
-			// Append a Unix-second suffix and retry once.
-			branch = fmt.Sprintf("%s-%d", branch, time.Now().Unix())
-			if retryErr := p.gh.CreateBranch(ctx, owner, repo, base, branch, baseSHA); retryErr != nil {
-				return models.PRResult{}, fmt.Errorf("create branch (retry): %w", retryErr)
-			}
-		} else {
-			return models.PRResult{}, fmt.Errorf("create branch: %w", err)
-		}
+		return models.PRResult{}, fmt.Errorf("create branch: %w", err)
 	}
 
 	commitMsg := fmt.Sprintf("[CodeSentinel] Fix %s %s in %s:%d", iss.Severity, iss.BugType, iss.File, iss.LineStart)

@@ -279,3 +279,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Follow-up commit `bd67a3073f4d0ff84665c7fc86718bdd9fcacb36` passed GitHub Actions [41693458484](https://github.com/saketh1125/Argus/actions/runs/41693458484): formatting, tests, vet, race, native build and Windows AMD64 cross-build all succeeded.
 - PR #2 is open, draft and unmerged at `bd67a30`. Branch push was a normal fast-forward; worktree was clean before this documentation update. No live services or credentials were used.
 - Updated estimate: 90% across 25 equal-weight rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED; `(22 + 0.5) / 25 = 90%`. E2B live behavior and exact-patch approval/fork publication remain blocked.
+
+## 2026-11-04 — Fail closed on publication branch collisions
+
+- The PR agent previously generated a timestamp-suffixed branch and retried when deterministic branch creation returned “already exists.” That behavior could bypass evidence of a prior partial/response-lost attempt and publish a duplicate. Branch collisions now stop the attempt; the candidate is surfaced as demoted. Regression verifies no commit or PR and only one branch attempt.
+- E2B provider research rechecked current official materials: the vendor-maintained SDKs documented are JavaScript and Python; the Go SDK found is community-maintained. The sandbox factory remains unavailable with or without `E2B_API_KEY`; no host-execution fallback or unsupported dependency was introduced.
+- Focused collision tests, full Go tests, vet, build and diff check pass locally; build exits 0 with a restricted module-cache stat warning. Current-head CI is pending. No credentials or live publication were used.
+- Interim estimate: 88% across 25 rows (21 VERIFIED, 2 PARTIALLY VERIFIED, 2 BLOCKED). The partial items are current-head CI and mock/live distinction. E2B verification and exact-approval/fork publication remain blocked.

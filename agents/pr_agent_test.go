@@ -20,6 +20,7 @@ type captureGitHub struct {
 	prSpecs   []tools.PRSpec
 	issues    int
 	branches  int
+	branchErr error
 	commitErr error
 	live      bool
 }
@@ -33,7 +34,7 @@ func (c *captureGitHub) DefaultBranch(context.Context, string, string) (string, 
 }
 func (c *captureGitHub) CreateBranch(context.Context, string, string, string, string, string) error {
 	c.branches++
-	return nil
+	return c.branchErr
 }
 func (c *captureGitHub) CommitFile(_ context.Context, _, _ string, spec tools.CommitSpec) error {
 	c.commits = append(c.commits, spec)
@@ -192,6 +193,21 @@ func TestPRAgentFailedValidationCannotCreateBranchOrPR(t *testing.T) {
 	}
 	if gh.branches != 0 || len(gh.commits) != 0 || len(gh.prSpecs) != 0 || len(report.PRsRaised) != 0 {
 		t.Fatalf("failed validation caused PR side effects: branches=%d commits=%d PRs=%d", gh.branches, len(gh.commits), len(gh.prSpecs))
+	}
+}
+
+func TestPRAgentExistingBranchCollisionDoesNotRetryWithNewBranch(t *testing.T) {
+	gh := &captureGitHub{branchErr: errors.New("422 Reference already exists")}
+	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
+	report, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{validPRIssue()}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if gh.branches != 1 || len(gh.commits) != 0 || len(gh.prSpecs) != 0 {
+		t.Fatalf("branch collision must stop before commit or PR: branches=%d commits=%d PRs=%d", gh.branches, len(gh.commits), len(gh.prSpecs))
+	}
+	if len(report.DemotedIssues) != 1 || !report.DemotedIssues[0].Demoted {
+		t.Fatalf("uncertain existing branch must be surfaced as demoted: %#v", report.DemotedIssues)
 	}
 }
 

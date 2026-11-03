@@ -282,3 +282,10 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Follow-up implementation commit `bd67a3073f4d0ff84665c7fc86718bdd9fcacb36` passed run [41693458484](https://github.com/saketh1125/Argus/actions/runs/41693458484), including formatting, full tests, vet, race, native build and Windows AMD64 cross-build.
 - PR #2 was verified open, draft and unmerged at `bd67a30`. The branch was pushed as a normal fast-forward; no merge or history rewrite was performed.
 - Updated estimate: **90%** across 25 equal-weight acceptance rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED; `(22 + 0.5) / 25 = 90%`. The remaining partial is explicit mock/live state; E2B live execution and exact-patch approval/fork publication remain blocked.
+
+## Publication collision audit — 2026-11-04
+
+- Found that a deterministic branch-creation conflict triggered a timestamped branch retry. If the first attempt had actually created the branch but its response was lost, a rerun could create a second branch and PR. Removed that retry: branch-create failure now stops publication and demotes the issue. Added a regression asserting one branch attempt and no commit/PR after collision.
+- Official E2B project materials document JavaScript and Python SDKs; the Go SDK examined is community-maintained. A direct Go client remains unverified, so E2B stays disabled and repository code cannot fall back to host execution. No live credentials or unsupported dependency were used.
+- Focused tests, full `go test ./...`, `go vet ./...`, and `go build ./...` pass locally. Build exits 0 with a restricted module stat-cache warning. Current-head CI is pending.
+- Interim estimate: **88%** over 25 rows: 21 VERIFIED, 2 PARTIALLY VERIFIED, 2 BLOCKED; `(21 + 2×0.5) / 25 = 88%`. CI and explicit mock/live state are partial; live E2B and exact-approval/fork publication remain blocked.
