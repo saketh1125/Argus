@@ -2,7 +2,7 @@
 
 ## Follow-up audit — 2026-11-03
 
-Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`). Follow-up implementation commit: `8a882540a26b2613d687add46e789878e3770d82`; Linux symlink-test commit: `6c88dbc94730b0c4f9077eb327c1f5236884d55b`. PR #2 remains open, draft and unmerged.
+Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`). Follow-up commits: `8a882540a26b2613d687add46e789878e3770d82`, `6c88dbc94730b0c4f9077eb327c1f5236884d55b`, and `f22c54e7841e91e4b929bf0d54e24f67b8df96cb`. PR #2 remains open, draft and unmerged.
 
 ### High-risk findings and resolutions
 
@@ -51,7 +51,7 @@ P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effe
 - `go build ./...` — exit 0 with the same restricted module stat-cache warning.
 - Offline mock workflow — PASS; mock adapters visible, sandbox unavailable, zero PRs and two candidates demoted.
 - Live sandbox/publication tests — NOT RUN. Windows symlink regression — SKIPPED locally; Linux CI run [#39](https://github.com/saketh1125/Argus/actions/runs/41660865916) passed the mandatory symlink test.
-- Continuation commits `8a88254` and `6c88dbc` are pushed. Run #39 passed all configured CI jobs on `6c88dbc`; the empty-hooks-directory refinement is local and awaits its own CI run.
+- Continuation commits `8a88254`, `6c88dbc`, and `f22c54e` are pushed. GitHub Actions run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed all configured CI jobs on `f22c54e`.
 
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`

@@ -57,6 +57,12 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Added a regression for the clone arguments. Targeted test and full `go test ./...`, `go vet ./...`, `go build ./...` pass locally; the build still emits the restricted module stat-cache warning.
 - This refinement is local after `6c88dbc`; CI is pending its push. E2B remains unavailable and no live credentials were used.
 
+## 2026-11-03 — Git hook hardening CI confirmation
+
+- Pushed `f22c54e7841e91e4b929bf0d54e24f67b8df96cb` fast-forward to `origin/codex/pr-patch-safety`.
+- PR #2 remains open, draft and unmerged at `f22c54e`.
+- GitHub Actions [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed formatting, tests, vet, race tests, native build and Windows AMD64 build on the current head.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.
