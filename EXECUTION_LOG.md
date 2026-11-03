@@ -44,6 +44,19 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused tests, full `go test ./...`, `go vet ./...`, and `go build ./...` pass; build emits a restricted stat-cache warning. The offline mock workflow passes with sandbox unavailable and no PRs. No live credentials were used.
 - This continuation remains uncommitted; its CI, including the Linux symlink test, is pending.
 
+## 2026-11-03 — Host-boundary CI confirmation
+
+- Pushed implementation commit `8a882540a26b2613d687add46e789878e3770d82` and test-hardening commit `6c88dbc94730b0c4f9077eb327c1f5236884d55b` as fast-forwards to `origin/codex/pr-patch-safety`.
+- The symlink test skips only on Windows, where symlink creation is privilege-gated; it fails on other platforms if symlink creation is unavailable, so Linux CI cannot silently skip the check.
+- PR #2 remains open, draft and unmerged at `6c88dbc`.
+- GitHub Actions [#39](https://github.com/saketh1125/Argus/actions/runs/41660865916) passed formatting, tests, vet, race tests, native build and Windows AMD64 build on the current head.
+
+## 2026-11-03 — Git hook execution hardening
+
+- Replaced the null-device Git hook path with a unique empty temporary hooks directory for platform-independent hook suppression during clone.
+- Added a regression for the clone arguments. Targeted test and full `go test ./...`, `go vet ./...`, `go build ./...` pass locally; the build still emits the restricted module stat-cache warning.
+- This refinement is local after `6c88dbc`; CI is pending its push. E2B remains unavailable and no live credentials were used.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

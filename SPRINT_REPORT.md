@@ -2,7 +2,7 @@
 
 ## Follow-up audit — 2026-11-03
 
-Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`). Follow-up code commit: `a039095fbb517e90fcda430d3806f056ea79f6a9`; PR #2 remains open, draft and unmerged.
+Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`). Follow-up implementation commit: `8a882540a26b2613d687add46e789878e3770d82`; Linux symlink-test commit: `6c88dbc94730b0c4f9077eb327c1f5236884d55b`. PR #2 remains open, draft and unmerged.
 
 ### High-risk findings and resolutions
 
@@ -40,7 +40,8 @@ P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effe
 - Sandbox result output is capped at 4 MiB; persisted validation text and failure details are separately capped to prevent unbounded report growth.
 - **High — direct `githubREST` writes could bypass `PRAgent`.** The production REST client now refuses branch, content, PR and issue writes before making a request. Its only write-enabled seam exists in package tests for testing stale-state and conflict safeguards.
 - **High — host Git clone inherited execution configuration.** Clone URLs are parsed and normalized to canonical GitHub HTTPS URLs; ambient Git config, helper/path overrides, credential helpers and LFS smudge are disabled; cloning has a 2-minute deadline.
-- **High — local mock copy followed symlinks.** `copyDir` now refuses symlinks and special files. Its symlink regression skipped on this Windows host because creating a symlink requires an unavailable privilege; Linux CI must execute it.
+- Clone hook execution is disabled through a unique empty temporary hooks directory; this avoids relying on a platform-specific null-device path.
+- **High — local mock copy followed symlinks.** `copyDir` now refuses symlinks and special files. The Windows test skips because creating a symlink requires an unavailable privilege; the test is mandatory on Linux and CI run #39 passed it.
 
 ### Verification for this continuation
 
@@ -49,8 +50,8 @@ P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effe
 - `go vet ./...` — PASS.
 - `go build ./...` — exit 0 with the same restricted module stat-cache warning.
 - Offline mock workflow — PASS; mock adapters visible, sandbox unavailable, zero PRs and two candidates demoted.
-- Live sandbox/publication tests — NOT RUN. Windows symlink regression — SKIPPED locally; remote Linux CI pending.
-- This continuation is not yet pushed; do not count prior CI as verification for these changes.
+- Live sandbox/publication tests — NOT RUN. Windows symlink regression — SKIPPED locally; Linux CI run [#39](https://github.com/saketh1125/Argus/actions/runs/41660865916) passed the mandatory symlink test.
+- Continuation commits `8a88254` and `6c88dbc` are pushed. Run #39 passed all configured CI jobs on `6c88dbc`; the empty-hooks-directory refinement is local and awaits its own CI run.
 
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`

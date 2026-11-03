@@ -187,7 +187,12 @@ func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error
 	canonicalURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 	cloneCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cloneCtx, "git", "-c", "credential.helper=", "clone", "--depth", "1", canonicalURL, dest)
+	hooksDir, err := os.MkdirTemp("", "argus-empty-git-hooks-")
+	if err != nil {
+		return "", fmt.Errorf("clone: create empty hooks directory: %w", err)
+	}
+	defer os.RemoveAll(hooksDir)
+	cmd := exec.CommandContext(cloneCtx, "git", gitCloneArgs(canonicalURL, dest, hooksDir)...)
 	cmd.Env = gitCloneEnvironment()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -195,6 +200,13 @@ func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error
 		return "", fmt.Errorf("clone: git clone %s: %w: %s", canonicalURL, err, stderr.String())
 	}
 	return dest, nil
+}
+
+func gitCloneArgs(remote, dest, hooksDir string) []string {
+	return []string{
+		"-c", "credential.helper=", "-c", "core.hooksPath=" + hooksDir,
+		"clone", "--depth", "1", remote, dest,
+	}
 }
 
 // gitCloneEnvironment removes ambient Git configuration and repository paths

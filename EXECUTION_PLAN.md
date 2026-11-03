@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; latest pushed checkpoint `b73e02476b22ef4f9a8178affa3ed3e0d64394b0` passed CI run [#35](https://github.com/saketh1125/Argus/actions/runs/41657499343). A local follow-up adds stricter result handling and host Git/copy boundaries; full tests/vet/build pass locally and its CI is pending. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; latest pushed head `6c88dbc94730b0c4f9077eb327c1f5236884d55b` passed CI run [#39](https://github.com/saketh1125/Argus/actions/runs/41660865916). Local follow-up disables clone hooks through a private empty hooks directory; full tests/vet/build pass locally, pending push/CI. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -942,9 +942,9 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | GitHub write retry/partial-failure handling is bounded | VERIFIED | Write requests make a single attempt and surface uncertain outcomes; response size and client time are bounded. Focused mocked HTTP tests pass. |
 | Sandbox results must account for every command and reject timeout/nonzero/cancellation/oversized output | VERIFIED | Validator requires success, aggregate and per-command zero exits, no timeout, exact command count, active context, and no more than 4 MiB of output; adversarial tests cover incomplete, contradictory, cancelled and oversized results. |
 | Direct live GitHub client writes cannot bypass the PR agent | VERIFIED | Production client refuses branch, file, PR and issue writes before network calls; regression test confirms zero requests. |
-| Host Git clone cannot invoke configured filters/helpers or copy symlink targets | PARTIALLY VERIFIED | Remote-helper URLs and ambient Git execution configuration are rejected/cleared; local symlinks and special files are refused. Windows skipped symlink creation due privilege; Linux CI is required for that regression. |
+| Host Git clone cannot invoke configured filters/helpers or copy symlink targets | VERIFIED | Clone accepts only canonical GitHub HTTPS URLs, disables ambient system/global/config helper settings, credential helpers, hooks and LFS smudge, and rejects local symlinks/special files. CI run #39 passed the non-skippable Linux symlink test; a temporary empty hook directory is added in the pending local follow-up. |
 | Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
-| CI required checks pass on this audit's code | VERIFIED | Run [#31](https://github.com/saketh1125/Argus/actions/runs/41656786547) passed formatting, tests, vet, race, native build and Windows AMD64 build on `a039095`. |
+| CI required checks pass on this audit's code | VERIFIED | Run [#39](https://github.com/saketh1125/Argus/actions/runs/41660865916) passed formatting, tests, vet, race, native build and Windows AMD64 build on `6c88dbc`. |
 | Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | No `E2B_API_KEY`; old unverified adapter was removed from selection and implementation. Credential presence alone will not re-enable it. |
 | Exact-patch human approval and fork-based contribution publication | BLOCKED | Not implemented. Live writes now fail closed; no credentials or live publication tests were used. |
 

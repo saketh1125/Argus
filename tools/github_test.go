@@ -65,6 +65,14 @@ func TestGitHubCloneRejectsRemoteHelperURLs(t *testing.T) {
 	}
 }
 
+func TestGitCloneArgsDisableCredentialHelpersAndHooks(t *testing.T) {
+	hooksDir := t.TempDir()
+	args := strings.Join(gitCloneArgs("https://github.com/owner/repo.git", "checkout", hooksDir), " ")
+	if !strings.Contains(args, "credential.helper=") || !strings.Contains(args, "core.hooksPath="+hooksDir) {
+		t.Fatalf("git clone must disable credential helpers and hooks, got args %q", args)
+	}
+}
+
 func TestGitCloneEnvironmentDisablesAmbientGitExecutionConfig(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "filter.hostile.smudge")
