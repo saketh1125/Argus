@@ -143,6 +143,18 @@ func TestValidatorDoesNotGenerateTestCommands(t *testing.T) {
 	}
 }
 
+func TestBuildSpecUsesLinuxCommandsAndPathsOnEveryHost(t *testing.T) {
+	v := NewValidator(passSandbox{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	file := filepath.Join("src", "quoted'name.py")
+	spec := v.buildSpec("python", file, "print('ok')\n")
+	if _, ok := spec.Files["src/quoted'name.py"]; !ok {
+		t.Fatalf("sandbox path must use POSIX separators, got %#v", spec.Files)
+	}
+	if len(spec.Commands) != 1 || spec.Commands[0] != `python3 -m py_compile 'src/quoted'\''name.py'` {
+		t.Fatalf("sandbox command must use Linux command name and POSIX quoting, got %#v", spec.Commands)
+	}
+}
+
 func TestValidatorRejectsIncompleteOrContradictorySandboxResults(t *testing.T) {
 	cases := []struct {
 		name   string

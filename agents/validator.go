@@ -275,8 +275,9 @@ func safeRepoFile(root, rel string) (string, error) {
 // generated test commands are excluded until commands use an explicit allowlist
 // and argument arrays.
 func (v *Validator) buildSpec(lang, relFile, patched string) services.SandboxSpec {
-	files := map[string]string{relFile: patched}
-	commands := agtSyntaxCmd(lang, relFile)
+	sandboxPath := filepath.ToSlash(relFile)
+	files := map[string]string{sandboxPath: patched}
+	commands := agtSyntaxCmd(lang, sandboxPath)
 
 	timeout := v.cfg.SandboxTimeout
 	if timeout <= 0 {

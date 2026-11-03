@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -78,12 +77,9 @@ func agtTempSchedule(n int) []float64 {
 // than `go build <file>` because a single-file go build fails without module
 // context. Unknown languages fall back to a no-op success.
 func agtSyntaxCmd(lang, file string) []string {
-	q := agtShellQuote(file)
+	q := agtShellQuote(filepath.ToSlash(file))
 	switch lang {
 	case "python":
-		if runtime.GOOS == "windows" {
-			return []string{"python -m py_compile " + q}
-		}
 		return []string{"python3 -m py_compile " + q}
 	case "javascript", "typescript":
 		return []string{"node --check " + q}
@@ -100,11 +96,9 @@ func agtSyntaxCmd(lang, file string) []string {
 	}
 }
 
-// agtShellQuote single-quotes a path for safe embedding in a shell command.
+// agtShellQuote uses POSIX shell quoting because validation commands run in a
+// Linux sandbox regardless of the host platform.
 func agtShellQuote(s string) string {
-	if runtime.GOOS == "windows" {
-		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 

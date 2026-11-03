@@ -32,6 +32,26 @@ The Windows checkout has no `.env`; presence checks showed all integration crede
 
 P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effect live publication refusal, and CI are verified. Real E2B execution and exact-patch approval/fork publishing remain blockers.
 
+## Continued audit — 2026-11-03 (Windows-to-Linux validation and credential-free verification)
+
+### Risk findings
+
+- **Medium — validation specs were host-platform dependent.** Windows generated `python` instead of the Linux sandbox's `python3` and retained backslash paths. Validator command construction and sandbox file paths now use POSIX conventions on every host. `TestBuildSpecUsesLinuxCommandsAndPathsOnEveryHost` covers the exact command and path. E2B remains disabled, so provider execution is not claimed.
+- **Critical / High — no new open bypass found in this pass.** Missing and synthetic-present E2B keys both select the unavailable adapter; missing GitHub/model credentials select visible mocks; the live publication entry point and production REST client reject writes. Existing regressions cover no-side-effect GitHub refusal and sandbox refusal.
+
+### Credential-free and mock verification
+
+- `.env` is absent. Presence-only checks found `GITHUB_TOKEN`, `GITHUB_ALLOWED_REPOS`, `ENABLE_LIVE_AUTOPR`, `NIM_API_KEY`, `JINA_API_KEY`, `GEMINI_API_KEY`, `E2B_API_KEY`, `ARGUS_RUN_LIVE_NIM_TESTS`, and checked optional runtime settings unset. No secret values were read or emitted.
+- Credential-free tests: `go test ./config ./services ./agents ./tools -count=1` — PASS; `go test ./... -count=1` — PASS.
+- Mock-backed checks: missing/present-but-disabled adapter tests passed in the Go suite; offline sample workflow — PASS, all adapters labelled mock, `sandbox=unavailable`, zero PRs, two candidates demoted.
+- Static checks: `go vet ./...` — PASS; changed-file `gofmt -l` — no output; `git diff --check` — PASS with Windows line-ending warnings; `go build ./...` — exit 0 with restricted module stat-cache warning.
+- Local `go test -race ./...` — BLOCKED because `CGO_ENABLED=0`. Run [#55](https://github.com/saketh1125/Argus/actions/runs/41666072125) passed CI on pushed commit `69c2d83`, before the current local portability change.
+- Live E2B, NIM and GitHub publication were not run. E2B requires `E2B_API_KEY` only after an adapter is implemented and explicit authorization is given. NIM requires `NIM_API_KEY` and `ARGUS_RUN_LIVE_NIM_TESTS=true`. GitHub write credentials are not useful until the required approval/fork protections are implemented; writes remain rejected.
+
+### Status
+
+P0 remains **IN PROGRESS**. The Windows-to-Linux command-generation defect is fixed locally; its CI result is pending. The genuine isolated provider, live sandbox lifecycle evidence, exact-patch approval and fork-based publishing remain unverified or blocked.
+
 ## Continued audit — 2026-11-03
 
 ### Additional findings addressed

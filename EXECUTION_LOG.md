@@ -120,3 +120,15 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - GitHub Actions run [#27](https://github.com/saketh1125/Argus/actions/runs/41651669380) completed successfully: formatting, test, vet, race test, native build and Windows AMD64 cross-build all passed.
 - The branch is synchronized with origin and the working tree is clean.
 - Phase 0 remains open pending E2B/provider verification and remaining adversarial safety coverage.
+
+## 2026-11-03 — Windows-to-Linux validator portability and credential audit
+
+- Starting state: branch `codex/pr-patch-safety`, local/remote commit `69c2d83b82cf7e3997ea291c5a275d15036c0672`, PR #2 open/draft/unmerged, no remote diff. The tree already contained three local validator portability edits from the prior continuation; these were preserved.
+- PR #2 metadata confirms head `69c2d83`; GitHub Actions run [#55](https://github.com/saketh1125/Argus/actions/runs/41666072125) completed successfully on that pushed head. No CI result yet covers the current local edits.
+- Confirmed `.env` absent and all checked credential/config variable names unset using presence-only checks. No secret values were read or emitted.
+- Medium issue fixed locally: buildSpec and syntax command generation now produce Linux sandbox paths and `python3`/POSIX quoting regardless of host OS. Added `TestBuildSpecUsesLinuxCommandsAndPathsOnEveryHost`.
+- Credential-free `go test ./config ./services ./agents ./tools -count=1` — PASS; full `go test ./... -count=1` — PASS. Regression suite confirms missing and synthetic-present-but-disabled E2B fail closed, missing GitHub/model credentials choose visible mocks, direct live GitHub writes are rejected before network calls, and mock publication remains isolated from real GitHub.
+- `go vet ./...` — PASS; changed-file `gofmt -l` — no output; `git diff --check` — PASS with Windows line-ending conversion warnings; `go build ./...` — exit 0 with restricted Go module stat-cache warning.
+- Local `go test -race ./...` — BLOCKED: Go requires CGO and `CGO_ENABLED=0`. Offline sample run — PASS: mock mode identified, sandbox unavailable, zero PRs, two candidates demoted.
+- Live E2B/NIM/GitHub verification — NOT RUN. Live E2B will require a reviewed adapter, `E2B_API_KEY`, and explicit user authorization before credential transfer; no credential is requested by this checkpoint. Live NIM requires `NIM_API_KEY` plus `ARGUS_RUN_LIVE_NIM_TESTS=true`. GitHub live publication remains fail-closed pending exact-patch approval and fork workflow.
+- Phase 0 remains IN PROGRESS. No new Critical/High bypass was found in this pass. Local edits and CI status are pending checkpoint commit/push.
