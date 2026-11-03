@@ -190,3 +190,12 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Read-only GitHub metadata showed PR #2 open, draft and unmerged, targeting `main`, with head `fd0ee9ce989ef003c9e4937c4c419ca95852b014` at the time of this check.
 - GitHub Actions run [#71](https://github.com/saketh1125/Argus/actions/runs/41683558156) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build on checkpoint commit `fd0ee9c`.
 - Working tree was clean and branch `codex/pr-patch-safety` matched origin at the checked head. Phase 0 remains IN PROGRESS due E2B verification and disabled exact-patch/fork publication.
+
+## 2026-11-03 — Bounded provider responses and NIM retries
+
+- **Medium — live provider responses were read without a byte ceiling.** Added a shared 4 MiB reader for NIM, Ollama, Jina, Gemini and Qdrant that rejects oversized declared lengths and bounds unknown-length bodies to limit+1 bytes.
+- **Medium — NIM retry could honor an extreme delay and ignore cancellation while sleeping.** Numeric `Retry-After` values now cap at 10 seconds; NIM retry and exponential-backoff waits return on context cancellation.
+- Added focused fake-transport regressions for all five adapters, unknown-length byte limits, retry parsing/capping and prompt cancellation after a mock 24-hour `Retry-After` response.
+- Focused service tests — PASS. `go test ./... -count=1` — PASS. `go vet ./...` — PASS. `go build ./...` — exit 0 with the restricted module stat-cache access warning. `git diff --check` — PASS; Git reports line-ending conversion warnings.
+- No credentials or live provider calls were used. Latest confirmed pushed checkpoint remains `8640790`, with CI run [#73](https://github.com/saketh1125/Argus/actions/runs/41683949872) passing there; current local source changes are pending CI.
+- The current acceptance estimate is 83%: 16 of 21 rows VERIFIED, 3 PARTIALLY VERIFIED at half credit, 2 BLOCKED. E2B live verification and exact-patch approval/fork publication remain blocked; clone transfer still has no byte quota.

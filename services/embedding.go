@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"math"
 	"net/http"
 	"strings"
@@ -50,7 +49,9 @@ func newOllamaEmbed(ctx context.Context, host, model string) (*ollamaEmbed, bool
 		return nil, false
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	if _, err := readServiceResponse(resp); err != nil {
+		return nil, false
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, false
 	}
@@ -89,7 +90,10 @@ func (o *ollamaEmbed) embedOne(ctx context.Context, text string) ([]float32, err
 		return nil, fmt.Errorf("ollama: http: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := readServiceResponse(resp)
+	if err != nil {
+		return nil, fmt.Errorf("ollama: read response: %w", err)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("ollama: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
@@ -155,7 +159,10 @@ func (j *jinaEmbed) Embed(ctx context.Context, texts []string) ([][]float32, err
 		return nil, fmt.Errorf("jina: http: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := readServiceResponse(resp)
+	if err != nil {
+		return nil, fmt.Errorf("jina: read response: %w", err)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("jina: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
@@ -231,8 +238,11 @@ func (g *geminiEmbed) Embed(ctx context.Context, texts []string) ([][]float32, e
 		if err != nil {
 			return nil, fmt.Errorf("gemini: http: %w", err)
 		}
-		raw, _ := io.ReadAll(resp.Body)
+		raw, readErr := readServiceResponse(resp)
 		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("gemini: read response: %w", readErr)
+		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return nil, fmt.Errorf("gemini: status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 		}

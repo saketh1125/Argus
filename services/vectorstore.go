@@ -44,7 +44,9 @@ func newQdrantStore(ctx context.Context, host string) (*qdrantStore, bool) {
 		return nil, false
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	if _, err := readServiceResponse(resp); err != nil {
+		return nil, false
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, false
 	}
@@ -74,7 +76,10 @@ func (q *qdrantStore) doJSON(ctx context.Context, method, path string, body any)
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	out, _ := io.ReadAll(resp.Body)
+	out, err := readServiceResponse(resp)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
 	return out, resp.StatusCode, nil
 }
 

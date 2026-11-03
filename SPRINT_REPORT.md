@@ -198,3 +198,20 @@ Pull request: [#2 — Harden Argus validated GitHub patch pipeline](https://gith
 ## Next task
 
 Finish Phase 0: verify the isolated provider or keep validation unavailable, complete adversarial safety coverage, and reassess every P0 exit criterion.
+
+## Continued audit — bounded provider I/O and retry behavior (2026-11-03)
+
+### Medium-priority findings and resolutions
+
+- Provider responses from NIM, Ollama, Jina, Gemini and Qdrant were read without a byte limit. Added a shared 4 MiB response cap, including unknown-length streaming bodies; probes now fail unavailable on oversized responses.
+- NIM accepted arbitrarily large numeric `Retry-After` values and slept without observing cancellation. Delays now cap at 10 seconds, and NIM retry/backoff waits are context-aware.
+- Focused mocked tests verify the bounded read, each live adapter rejecting oversized responses, `Retry-After` parsing/capping, and cancellation without waiting on a 24-hour mock retry response.
+
+### Verification and current status
+
+- `go test ./services -run 'Test(ReadServiceResponseBoundsUnknownLengthBodies|LiveServiceAdaptersRejectOversizedResponses|NIMRetryAfterIsCappedAndCancellationAware|NIMRetryAfterCancellationDoesNotSleep)$' -count=1 -v` — PASS.
+- `go test ./... -count=1` — PASS. `go vet ./...` — PASS. `go build ./...` — exit 0 with the restricted module stat-cache warning. `git diff --check` — PASS with line-ending conversion warnings.
+- No live provider credentials or endpoints were used. `.env` remains absent; existing credential-free and mock verification remains applicable.
+- Latest confirmed remote checkpoint was `8640790`; CI run [#73](https://github.com/saketh1125/Argus/actions/runs/41683949872) passed all configured jobs on that checkpoint. CI for these current local changes is pending.
+- Current estimate: **83%** by equal-weight scoring across 21 acceptance rows: 16 VERIFIED, 3 PARTIALLY VERIFIED at half weight, 2 BLOCKED; `(16 + 1.5) / 21 = 83.3%`. The two blocked requirements remain live isolated-provider verification and exact-patch approval/fork-based publication. Clone transfer still lacks a byte quota.
+- PR #2 was last checked open, draft and unmerged at `8640790`. Current changes are local and not yet committed.
