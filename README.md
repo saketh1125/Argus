@@ -37,7 +37,7 @@ not enable sandbox execution or publication.
 
 ```
 GitHub URL
-  └─▶ Preprocessor   clone → parse (heuristic, top-50 recent files) → call graph → embed → vector index
+  └─▶ Preprocessor   clone → parse (heuristic; 50 recent supported files by default, each ≤1 MiB) → call graph → embed → vector index
   └─▶ Localizer      vector search + LLM re-rank → suspicious LocationTargets (full-file fallback)
   └─▶ Analyst ×N     parallel goroutines (capped, 30s each) → evidence-enforced Issues
   └─▶ Aggregator     hash dedup + severity/confidence gate + call-graph enrichment
@@ -46,6 +46,10 @@ GitHub URL
   └─▶ PR Agent       mock records only; live GitHub writes are refused
        Dashboard     local SSE panel (localhost:8080)
 ```
+
+Preprocessing excludes symlinks and non-regular files and skips supported source
+files larger than 1 MiB before parsing. Git clone has a two-minute timeout, but
+the transfer itself does not yet have a byte quota.
 
 ### Package layout
 ```

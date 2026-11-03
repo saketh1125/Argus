@@ -94,6 +94,23 @@ Current estimate: **87%** by equal-weight checklist scoring: 16 of 19 rows VERIF
 
 Current working-copy estimate: **87%** by equal-weight checklist scoring: 16 of 19 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. Linux CI verified symlink filtering and all configured checks on `b135e96`. E2B execution and exact-patch approval/fork publication remain blocked; Phase 0 is still in progress.
 
+## Continued audit — 2026-11-03 (repository input resource bound)
+
+### Medium-priority finding and resolution
+
+- **Medium — a single supported source file could be arbitrarily large.** `MAX_FILES` bounded the number selected only after traversal, while `os.ReadFile` loaded each selected file without a byte limit. A large file could consume memory and create unbounded parser and provider input.
+- Indexing now accepts only regular files up to 1 MiB. The read path independently uses a 1 MiB + 1 byte limit to guard against a file growing after discovery, and reports the number of oversized source files skipped. README documents the limit.
+- **Remaining limitation:** live `git clone` has a two-minute timeout but no byte quota, so repository transfer can still consume disk space during that window. This is explicitly recorded as unresolved.
+
+### Verification
+
+- Focused candidate and bounded-read tests — PASS. `go test ./... -count=1` — PASS; `go vet ./...` — PASS; `go build ./...` — exit 0 with the restricted module stat-cache warning.
+- CI run #67 passed on documentation head `3ec51e1`, before this source change. CI for the new size-bound code is pending. No provider credentials or live operations were used.
+
+### Current estimate and status
+
+Current working-copy estimate: **83%** by equal-weight checklist scoring: 15 of 20 rows VERIFIED, 3 PARTIALLY VERIFIED, and 2 BLOCKED (each partial counts as one half). Source byte limiting and current-code CI are partial until CI passes. E2B and publication workflow blockers remain; clone transfer byte quota is an additional medium operational limitation.
+
 ## Continued audit — 2026-11-03
 
 ### Additional findings addressed

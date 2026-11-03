@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,10 @@ import (
 // sigCollection is the Qdrant collection name holding embedded signatures
 // (API Contract §5.5).
 const sigCollection = "codesentinel_signatures"
+
+// maxSourceFileBytes bounds memory use and provider input from a single
+// untrusted repository file during indexing.
+const maxSourceFileBytes = 1 << 20
 
 // Preprocessor transforms a raw GitHub repository into a structured, searchable
 // knowledge base: it shallow-clones the repo, parses the top-N recently-modified
@@ -84,7 +89,7 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	// Walk the tree and collect supported regular files with their mod times.
 	// Git checkouts can contain symlinks, so reject them before the later ReadFile
 	// call can follow a link outside the cloned repository.
-	cands := collectSourceCandidates(workdir, p.parser)
+	cands, oversizedFiles := collectSourceCandidates(workdir, p.parser)
 
 	// Sort by modification time descending, take the top MaxFiles.
 	sort.Slice(cands, func(i, j int) bool { return cands[i].mod > cands[j].mod })
@@ -98,7 +103,11 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	total := len(cands)
 	for i, c := range cands {
 		p.rep.SetFilesProgress(i, total)
-		data, rerr := os.ReadFile(c.abs)
+		data, tooLarge, rerr := readIndexedSourceFile(c.abs)
+		if tooLarge {
+			oversizedFiles++
+			continue
+		}
 		if rerr != nil {
 			p.rep.Log("preprocessor: read %s: %v", c.rel, rerr)
 			continue
@@ -112,6 +121,9 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 		pf.ModTime = c.mod
 		idx.AddFile(pf)
 	}
+	if oversizedFiles > 0 {
+		p.rep.Log("preprocessor: skipped %d supported files larger than %d bytes", oversizedFiles, maxSourceFileBytes)
+	}
 	p.rep.SetFilesProgress(total, total)
 	idx.BuildCallGraph()
 	p.rep.SetStage(models.StageIngest, 70)
@@ -124,8 +136,9 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	return idx, workdir, owner, repo, nil
 }
 
-func collectSourceCandidates(workdir string, parser tools.CodeParser) []sourceCandidate {
+func collectSourceCandidates(workdir string, parser tools.CodeParser) ([]sourceCandidate, int) {
 	var cands []sourceCandidate
+	oversizedFiles := 0
 	_ = filepath.WalkDir(workdir, func(path string, d os.DirEntry, werr error) error {
 		if werr != nil {
 			return nil // skip unreadable entries, keep walking
@@ -148,6 +161,10 @@ func collectSourceCandidates(workdir string, parser tools.CodeParser) []sourceCa
 		if ierr != nil || !info.Mode().IsRegular() {
 			return nil
 		}
+		if info.Size() > maxSourceFileBytes {
+			oversizedFiles++
+			return nil
+		}
 		rel, rerr := filepath.Rel(workdir, path)
 		if rerr != nil {
 			rel = path
@@ -155,7 +172,24 @@ func collectSourceCandidates(workdir string, parser tools.CodeParser) []sourceCa
 		cands = append(cands, sourceCandidate{abs: path, rel: rel, mod: info.ModTime().UnixNano()})
 		return nil
 	})
-	return cands
+	return cands, oversizedFiles
+}
+
+func readIndexedSourceFile(path string) ([]byte, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxSourceFileBytes+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) > maxSourceFileBytes {
+		return nil, true, nil
+	}
+	return data, false, nil
 }
 
 // embedSignatures embeds every signature's "{file} {name} {signature}" text into

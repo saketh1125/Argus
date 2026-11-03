@@ -171,3 +171,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - GitHub Actions run [#65](https://github.com/saketh1125/Argus/actions/runs/41681861358) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build on `ubuntu-latest`. The symlink regression executed there; it skips only on this Windows host due symlink privilege restrictions.
 - Host clone/preprocessing boundary and current-code CI checkpoint are now VERIFIED. The equal-weight 19-row estimate is 87%: 16 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED.
 - PR #2 remains draft and unmerged. E2B provider execution and exact-patch approval/fork publication remain unresolved. No credentials or live services were used.
+
+## 2026-11-03 — Per-file indexing byte limit
+
+- Found a Medium resource-exhaustion path: selected supported source files were read in full without a byte ceiling. Added a 1 MiB source-file limit during discovery plus a bounded read to protect against growth between discovery and open; oversized files are counted and reported.
+- Added a regression proving oversized files are excluded and bounded reads stop at the cap. Focused and full Go tests, vet and build passed locally. Build exited 0 with the known restricted stat-cache warning.
+- README documents the per-file limit and states that the two-minute live clone timeout does not provide a download byte quota. The clone transfer storage bound remains unimplemented.
+- Local change is pending CI; no secrets or live providers were used.
