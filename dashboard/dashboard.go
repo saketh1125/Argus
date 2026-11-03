@@ -80,7 +80,8 @@ type Dashboard struct {
 	// handleIndex serves the launcher until this is true.
 	launched bool
 	// launchCh is armed by ListenForLaunch; nil means web-launcher not in use.
-	launchCh chan LaunchConfig
+	launchCh    chan LaunchConfig
+	launchToken string
 
 	// srv holds the HTTP server, listener, and SSE client registry (server.go).
 	srv *httpServer

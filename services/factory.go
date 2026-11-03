@@ -23,10 +23,12 @@ type Clients struct {
 // New assembles the service Clients for a run. It builds the shared RateLimiter
 // once, then selects each adapter:
 //
-//   - cfg.ForceMock forces every integration to its mock adapter.
-//   - Otherwise an adapter is chosen real when its credential/service is present
-//     and (for local services) a short, non-fatal probe succeeds; any probe
-//     failure falls back to that integration's mock.
+//   - cfg.ForceMock forces supported integrations to their mock adapters; the
+//     sandbox remains unavailable because mock mode never executes repository code.
+//   - Otherwise a supported adapter is chosen live when its credential/service
+//     is present and (for local services) a short probe succeeds; supported
+//     mock adapters are used when not. Sandbox validation stays unavailable
+//     until its provider contract, bounds, isolation and cleanup are verified.
 //
 // Probes use short timeouts and never abort startup. Mode is computed uniformly
 // from how many selected adapters report Live().

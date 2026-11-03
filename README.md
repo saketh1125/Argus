@@ -1,31 +1,35 @@
 # 🛡 CodeSentinel
 
-**Autonomous Multi-Agent Bug Detection & Auto-PR System** — Go 1.24, single binary.
+**Autonomous Multi-Agent Bug Analysis & Fix Proposal System** — Go 1.24.
 
-CodeSentinel ingests a GitHub repository, localizes and analyzes suspicious code
-with parallel LLM analyst agents, generates and **sandbox-validates** fixes, and
-raises structured pull requests — with a live web dashboard the whole time.
+CodeSentinel analyzes repository source, produces evidence-backed candidate fixes,
+and reports validation and publication status in a local dashboard. Validation is
+available only through a configured isolated provider; the current build keeps
+validation and live GitHub writes disabled and fails closed.
 
 It is built from the locked PRD (`01_PRD.md`) and System Design (`02_System_Design.md`).
 
 ---
 
-## Key property: runs end-to-end with **zero API keys**
+## Safe offline analysis mode
 
-Every external integration sits behind a Go interface with **two adapters** — a
-real one (live API/SDK) and a deterministic **mock** — selected automatically at
-startup by whether the credential/service is present:
+Adapters are selected from configuration. Missing model/GitHub credentials
+select deterministic mocks, while the unverified sandbox is reported as
+unavailable rather than replaced with a host executor:
 
 | Integration | Real adapter | Offline adapter |
 |---|---|---|
 | LLM (analyst/rerank/fix) | Nvidia NIM (OpenAI-compatible HTTP) | heuristic mock that scans code for planted bug patterns |
 | Embeddings | Ollama → Jina → Gemini fallback chain | deterministic hash embedding |
 | Vector DB | Qdrant (REST) | in-memory cosine search |
-| Code sandbox | E2B | **local executor** (real `py_compile`/`node --check`/`go build`) |
-| GitHub | GitHub REST API | in-memory recorder returning deterministic PR/issue URLs |
+| Code sandbox | Disabled pending provider verification | **unavailable**; no repository command runs |
+| GitHub | Live repository pipeline is currently gated; production writes are refused before HTTP | in-memory recorder with synthetic PR/issue URLs |
 
-So `FORCE_MOCK=true go run .` exercises the entire pipeline offline, and dropping
-in real keys flips each stage to live with no code change.
+`FORCE_MOCK=true go run . --repo ./testdata/sample-repo --no-dashboard` exercises
+credential-free analysis. Since isolated validation is unavailable, candidate
+fixes are demoted and are not eligible for publication. Synthetic URLs from the
+mock GitHub adapter do not represent real GitHub writes. Adding credentials does
+not enable sandbox execution or publication.
 
 ---
 
@@ -38,9 +42,9 @@ GitHub URL
   └─▶ Analyst ×N     parallel goroutines (capped, 30s each) → evidence-enforced Issues
   └─▶ Aggregator     hash dedup + severity/confidence gate + call-graph enrichment
   └─▶ Fix Generator  3 candidate rewrites (temp-varied) → programmatic unified diff → rank
-  └─▶ Validator      apply patch → sandbox syntax/test check → retry once → validate/demote
-  └─▶ PR Agent       branch + commit + PR (Crit/High) ; one Summary Issue (Med/Low + demoted)
-       Dashboard     live SSE panel throughout (localhost:8080)
+  └─▶ Validator      apply patch → isolated validation or explicit unavailable → demote if unavailable
+  └─▶ PR Agent       mock records only; live GitHub writes are refused
+       Dashboard     local SSE panel (localhost:8080)
 ```
 
 ### Package layout
@@ -56,17 +60,17 @@ main.go      pipeline orchestration
 testdata/    sample-repo with intentionally planted bugs for the offline demo
 ```
 
-The `models`, `config`, and the `*/interfaces.go` files are the **frozen contract
-layer**: every package builds against them, which is what let the implementation
-packages be written in parallel without conflicts.
+The `models`, `config`, and the `*/interfaces.go` files define the shared
+contracts between the pipeline and its adapters.
 
 ---
 
 ## Design decisions & deviations from the doc
 
 The PRD/Design name specific libraries (go-github, go-diff, Qdrant Go SDK, Templ,
-tree-sitter). This implementation delivers the **same behavior on the Go standard
-library only** — no external modules, no CGO, no codegen toolchain:
+tree-sitter). The current Go implementation uses the standard library for the
+core pipeline and keeps unavailable safety-critical integrations disabled. It
+has no CGO or code-generation requirement:
 
 - **NIM / Qdrant / GitHub / embeddings** → plain `net/http` against their REST/HTTP
   APIs (NIM is OpenAI-compatible; Qdrant and GitHub have full REST APIs).
@@ -81,13 +85,14 @@ library only** — no external modules, no CGO, no codegen toolchain:
   break the zero-dependency, single-binary principle. The design (PRD FR-08,
   System Design §8) has been amended to specify the **deterministic pure-Go hash
   embedding** (the same offline adapter) as the final tier. The chain is therefore
-  Ollama → Jina → Gemini → hash-embedding; the first three are real adapters, so
-  any one of those keys/services takes the pipeline live on embeddings.
+  Ollama → Jina → Gemini → hash-embedding; the first three are live embedding
+  adapters when configured.
 
 Why: zero dependency churn, an always-green build, and a true single binary. The
-interfaces are unchanged, so the named SDKs can be swapped back in later behind
-the same contracts. The rate limiter, evidence enforcement, severity/confidence
-gating, and validation semantics follow the design exactly.
+interfaces are unchanged, so reviewed SDKs can be added behind the same
+contracts. The rate limiter, evidence enforcement, and severity/confidence
+gating are implemented. Full isolated repository-context validation and
+approved fork-based publication remain outstanding.
 
 ---
 
@@ -97,16 +102,15 @@ Prereqs: Go 1.24. Optional for *live* local embeddings/vector search: Docker
 (Qdrant) and Ollama (`nomic-embed-text`).
 
 ```bash
-# Fully offline deterministic demo against the bundled buggy sample repo:
-FORCE_MOCK=true go run . --repo ./testdata/sample-repo
+# Offline analysis against the bundled sample; unavailable validation demotes fixes:
+FORCE_MOCK=true go run . --repo ./testdata/sample-repo --no-dashboard
 
-# Use live local embeddings + Qdrant (start them first), mock LLM/GitHub:
+# Optional local embedding/vector services:
 docker run -d -p 6333:6333 qdrant/qdrant
 ollama serve & ollama pull nomic-embed-text
 go run . --repo ./testdata/sample-repo
 
-# Fully live (provide keys in .env — see .env.example):
-go run . --repo https://github.com/owner/repo
+# Live remote analysis/publication is not enabled in this Phase 0 build.
 ```
 
 Flags: `--repo <url|path>`, `--mock`, `--no-dashboard`.

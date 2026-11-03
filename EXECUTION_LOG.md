@@ -139,3 +139,13 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - PR #2 remains open, draft and unmerged at `b79abba`.
 - GitHub Actions runs [#56](https://github.com/saketh1125/Argus/actions/runs/41668264467) and [#57](https://github.com/saketh1125/Argus/actions/runs/41668279346) both passed formatting, tests, vet, race tests, native build and Windows AMD64 cross-build.
 - Phase 0 remains IN PROGRESS. CI verifies the command-construction change, while live E2B execution still requires a reviewed provider implementation, `E2B_API_KEY`, and explicit authorization. Exact-patch human approval and fork-based publication remain unimplemented and live writes remain disabled.
+
+## 2026-11-03 — Dashboard launcher CSRF and truthful status audit
+
+- Starting state: clean branch `codex/pr-patch-safety` at `d9cb6d2650d12a475525ae79e4658969605dc8df`; PR #2 remained open/draft/unmerged. Public Actions metadata showed documentation checkpoint runs #58 and #59 passed on that head.
+- High issue found: dashboard POST /start had no Host/Origin/CSRF validation and could trigger analysis of a user-selected local path from a cross-site form. This could direct configured model/embedding services to process local source.
+- Added strict loopback Host/Origin checks, a cryptographic one-time CSRF token in the POST body, no-store on the token-bearing page, a 16 KiB form cap, POST-body-only parsing, and atomic single-launch acceptance.
+- Removed the unused GitHub token and disabled E2B key fields from the web launcher. Corrected README, .env.example, UI and source comments that incorrectly claimed host-local syntax validation, enabled PR creation, or fully live zero-key operation.
+- Focused launcher tests — PASS, including cross-origin, Host rebinding, wrong port, query-only/missing/replayed token, oversized request, one-shot and concurrent submissions. Full go test ./... -count=1 — PASS; go vet ./... — PASS; go build ./... — exit 0 with restricted module stat-cache warning.
+- Offline mock sample — PASS: mode/adapters labelled, sandbox=unavailable, 3 candidates, zero PRs, 2 demoted. Local race test — BLOCKED because CGO_ENABLED=0. CI for current local changes is pending.
+- .env/credential values were not read. No live model, GitHub or E2B operation occurred. Phase 0 remains IN PROGRESS; sandbox execution and publication workflow remain unresolved.

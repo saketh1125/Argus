@@ -57,6 +57,26 @@ P0 remains **IN PROGRESS**. The Windows-to-Linux command-generation defect is fi
 
 **86%** by equal-weight Phase 0 acceptance-row scoring: 15 of 18 requirements are VERIFIED, 1 is PARTIALLY VERIFIED (counted as one half), and 2 are BLOCKED. This checklist percentage does not mean the phase exit gate is met; the live isolated-provider requirement and publication approval/fork workflow remain substantial blockers.
 
+## Continued audit — 2026-11-03 (dashboard launcher trust boundary)
+
+### High-priority finding and resolution
+
+- **High — unauthenticated launcher POST allowed cross-site analysis starts.** The loopback dashboard accepted form submissions without an Origin/Host check or CSRF token. A malicious site could trigger analysis against a local path and influence service endpoints; with configured providers, this could expose local source or consume provider resources.
+- /start now requires an exact loopback Host and same-origin match on the active port, a cryptographically random one-time token submitted in the POST body, URL-encoded form content, and a 16 KiB body cap. The form accepts only one launch, including under concurrent submissions. The token-bearing page uses Cache-Control: no-store.
+- Removed the unused GitHub and disabled E2B API-key fields from the launcher. The dashboard no longer asks users to submit credentials for disabled integrations. README, launcher labels, KPI text, and Go comments now describe validation as unavailable and live writes as disabled.
+
+### Verification
+
+- Focused launcher regressions — PASS: cross-site Origin, rebound Host, wrong port, missing/query-only/replayed token, oversized form, concurrent submission, and no-store token page.
+- Full go test ./... -count=1 — PASS; go vet ./... — PASS; go build ./... — exit 0 with the restricted module stat-cache warning.
+- Offline sample workflow — PASS: all integrations labelled mock/unavailable, 3 candidates, zero PRs, 2 demoted.
+- go test -race ./... — BLOCKED locally because CGO_ENABLED=0; CI is pending for this dashboard change.
+- git diff --check — PASS with Windows line-ending warnings. No credentials or live services were used.
+
+### Current estimate and status
+
+Current working-copy estimate: **82%** by equal-weight checklist scoring: 14 of 19 rows VERIFIED, 3 PARTIALLY VERIFIED (each counts as one half), and 2 BLOCKED. The dashboard change is locally verified but has no CI evidence yet. E2B remains unavailable; exact-patch approval and fork-based publication remain incomplete. Phase 0 exit gate is not met.
+
 ## Continued audit — 2026-11-03
 
 ### Additional findings addressed

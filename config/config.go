@@ -11,13 +11,14 @@ import (
 	"strings"
 )
 
-// Config holds every tunable and credential the system uses. Credentials left
-// empty cause the corresponding service factory to select its mock adapter.
+// Config holds every tunable and credential the system uses. Missing
+// credentials select a mock only where one is safe; sandbox validation remains
+// explicitly unavailable until a verified isolated provider is enabled.
 type Config struct {
 	// Target.
 	RepoURL string
 
-	// Credentials (empty => mock mode for that integration).
+	// Credentials for supported live integrations; the sandbox stays unavailable.
 	GitHubToken        string
 	AllowedGitHubRepos []string
 	EnableLiveAutoPR   bool
