@@ -919,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Current tested checkpoint `d764978`; CI [#114](https://github.com/saketh1125/Argus/actions/runs/41700207329) passed formatting, tests, vet, race and native/Windows AMD64 builds. PR #2 remains open, draft and unmerged. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Current checkpoint `1199f70`; CI run [#117](https://github.com/saketh1125/Argus/actions/runs/41700509066) succeeded on this head. PR #2 remains open, draft and unmerged. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -933,10 +933,10 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | Requirement | Status | Evidence / limitation |
 |---|---|---|
 | Exact baseline and environment recorded | VERIFIED | Baseline and current remote head recorded above; Go 1.27.3, Windows/AMD64, `CGO_ENABLED=0`. |
-| Existing test/build outcomes documented accurately | VERIFIED | Current local audit full `go test ./... -count=1`, `go vet ./...`, and `go build ./...` passed; build exited 0 with a module stat-cache access warning. Local race test cannot start because CGO is disabled; current implementation CI runs 41688619335 and 41688631081 passed race. |
+| Existing test/build outcomes documented accurately | VERIFIED | On `1199f70`, credential-free `go test ./... -count=1`, `go vet ./...`, and `go build ./...` passed; build exited 0 with a restricted module stat-cache access warning. Local race test cannot start because CGO is disabled; current-head CI run #117 succeeded. |
 | No arbitrary LLM-supplied command executes on host | VERIFIED | Validator uses deterministic commands and no host command runner; earlier CI and tests cover this boundary. |
 | No untrusted repository code executes outside genuine isolation | VERIFIED (fail closed) | Sandbox adapter removed; with or without E2B credentials it reports unavailable and refuses commands. No live sandbox execution is claimed. |
-| Missing sandbox reports validation unavailable | VERIFIED | Factory/unavailable-sandbox regression tests; mock demo banner says `sandbox=unavailable` and demotes unvalidated fixes. |
+| Missing integration credentials cannot enable unsafe fallbacks | VERIFIED | `TestMissingProviderCredentialsSelectVisibleMocksAndUnavailableValidation`, `TestMissingE2BSelectsUnavailableSandbox`, `TestE2BCredentialDoesNotEnableUnverifiedSandbox` and `TestUnavailableSandboxRefusesCommands` pass. Blank GitHub/NIM keys select labelled mocks; missing E2B yields an explicit unavailable error and no host execution. |
 | Validator cannot accept a function-only rewrite as a full file | VERIFIED | Existing complete-file/provenance regression tests pass in `go test ./agents`. |
 | PR agent rejects absent, empty, stale, incomplete or mutated full-file provenance | VERIFIED | Existing provenance, conflict and base SHA tests pass; live PR entry point now refuses before any write until exact approval and fork publication exist. |
 | Regression tests preserve source/siblings and reject stale source | VERIFIED | Validator and GitHub patch safety tests pass. |
@@ -986,7 +986,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 ### Credential and verification inventory
 
-`.env` is absent and all checked integration credentials are unset. No values were read or logged.
+`.env` is absent; presence-only checks on 2026-11-04 confirmed `GITHUB_TOKEN`, `NIM_API_KEY`, `E2B_API_KEY`, `JINA_API_KEY`, `GEMINI_API_KEY` are unset and `ARGUS_RUN_LIVE_NIM_TESTS` is false. No secret values were read or logged. The focused suites and full suite passed with live-provider opt-in disabled.
 
 | Integration | Environment variables | Credential-free / mock verification | Live verification |
 |---|---|---|---|
@@ -997,11 +997,20 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | E2B | `E2B_API_KEY` | Unavailable-provider tests prove fail-closed behavior with missing and present synthetic test credentials; key presence cannot enable the unverified adapter. | Live check requires a reviewed supported adapter and `E2B_API_KEY`. No credential is requested or transferred without explicit authorization. Not attempted. |
 | Runtime controls | `MAX_RPM`, `MAX_FILES`, `ANALYST_PARALLEL`, `FIX_CANDIDATES`, `CONFIDENCE_GATE`, `LOCALIZE_FALLBACK`, `SANDBOX_TIMEOUT`, `DASHBOARD_PORT`, `FORCE_MOCK`, `NO_DASHBOARD` | Defaults and mock tests. | No credentials required. |
 
-Verification classes: credential-free tests exercise configuration, adapter selection, validation guards and patch/GitHub safety; mock-based integration exercises the offline sample flow and mocked HTTP side effects; live NIM requires `NIM_API_KEY` and `ARGUS_RUN_LIVE_NIM_TESTS=true`; live E2B requires `E2B_API_KEY` after a reviewed adapter exists; GitHub live publication would need a token, exact repository allowlist and publication authorization, but the code rejects live writes today. Missing model/GitHub keys choose clearly labelled deterministic mocks, and missing or present-but-disabled E2B returns an explicit unavailable error. These behaviors do not run repository code or write to GitHub.
+Verification classes: credential-free tests exercise configuration, adapter selection, validation guards and patch/GitHub safety; mock-based integration exercises the offline sample flow and mocked HTTP side effects; live NIM requires `NIM_API_KEY` and `ARGUS_RUN_LIVE_NIM_TESTS=true`; live E2B requires `E2B_API_KEY` after a reviewed adapter exists; GitHub live publication would need a token, exact repository allowlist and publication authorization, but the code rejects live writes today. Missing model/GitHub keys choose clearly labelled deterministic mocks, and missing or present-but-disabled E2B returns an explicit unavailable error. These behaviors do not run repository code or write to GitHub. For this continuation, `go test ./services ./tools ./config . -count=1` and `go test ./... -count=1` passed; `go vet ./...` passed; `go build ./...` exited 0 with the stat-cache warning. The live NIM opt-in was false and all integration credential presence checks were false.
 
 ### Current next action
 
 Keep repository-code execution and live publication disabled. The next highest-value Phase 0 action is to design and implement exact-patch approval plus fork-based publication while preserving the current no-live-write boundary; the existing PR agent refuses live writes before side effects. A reviewed supported E2B adapter and live verification remain separate blockers. Live E2B verification requires `E2B_API_KEY` after adapter review and explicit authorization before any credential transfer; do not request or transfer credentials without that authorization.
+
+### Credential-free continuation — 2026-11-04
+
+- Reconfirmed remote branch head `1199f701ddfa431a431c64192c25dff8a237d622` with `git ls-remote`; local `HEAD` matches and the working tree was clean before this documentation update. `git fetch` could not write `.git/FETCH_HEAD` in this restricted checkout. The GitHub CLI is unauthenticated; connected GitHub read-only metadata confirms PR #2 is open, draft, unmerged, and points at `1199f70`.
+- Current-head GitHub Actions run [#117](https://github.com/saketh1125/Argus/actions/runs/41700509066) completed successfully; combined status returned no failing statuses.
+- Inspected `.env.example`, `config.Load`, environment references, adapter selection, and integration tests. No `.env` exists. Presence-only checks found `GITHUB_TOKEN`, `NIM_API_KEY`, `E2B_API_KEY`, `JINA_API_KEY`, and `GEMINI_API_KEY` unset; `ARGUS_RUN_LIVE_NIM_TESTS` was not enabled. Values were never read or printed.
+- Credential-free verification: `go test ./services ./tools ./config . -count=1` and `go test ./... -count=1` passed. Mock/no-credential regressions confirm GitHub and NIM use named mock adapters and unavailable E2B refuses execution. `go vet ./...` passed; `go build ./...` exited 0 after a restricted Go module stat-cache warning.
+- Credential inventory and live-test prerequisites are recorded above. No credential request is needed for the remaining credential-free or mock-based work. Live E2B remains unverified; its exact credential requirement is `E2B_API_KEY`, usable only after a reviewed adapter exists and authorization for live verification is given. Live NIM requires `NIM_API_KEY` plus `ARGUS_RUN_LIVE_NIM_TESTS=true`. GitHub publication remains hard-disabled.
+- The score remains **90%** over 25 equal-weight acceptance rows: 22 VERIFIED + 0.5 for one PARTIALLY VERIFIED row, with two BLOCKED rows, `(22 + 0.5) / 25 = 90%`. Documentation and extra verification do not change the two blockers or satisfy the Phase 0 exit gate.
 
 ---
 
