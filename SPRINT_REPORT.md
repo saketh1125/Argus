@@ -4,6 +4,7 @@ Date: 2026-11-03
 Branch: `codex/pr-patch-safety`
 Baseline commit: `0089d0779c00f53c4f45acfd2437e093a2cbd484`
 Checkpoint commit: `0c57dc7` (`Fail closed when isolated validation is unavailable`)
+Status commit: `996d521` (`Record Argus Phase 0 checkpoint status`)
 Pull request: [#2 — Harden Argus validated GitHub patch pipeline](https://github.com/saketh1125/Argus/pull/2)
 
 ## Changes
@@ -37,22 +38,21 @@ Pull request: [#2 — Harden Argus validated GitHub patch pipeline](https://gith
 - `go test -race ./...` — NOT RUN: Go reports `-race requires cgo; enable cgo by setting CGO_ENABLED=1`; this environment has `CGO_ENABLED=0` and no discovered `gcc` executable.
 - `git diff --check` — PASS; Git emitted line-ending conversion warnings for modified Go files.
 - `FORCE_MOCK=true go run . --repo ./testdata/sample-repo --no-dashboard` — PASS. The run identified 3 candidate issues, raised 0 PRs, reported `sandbox=unavailable`, and demoted 2 fixes.
-- GitHub CI for this new workflow — NOT YET RUN.
+- GitHub Actions run [#27](https://github.com/saketh1125/Argus/actions/runs/41651669380) — PASS on commit `996d521`: changed-file formatting, `go test ./...`, `go vet ./...`, `go test -race ./...`, native build and Windows AMD64 cross-build all completed successfully.
 
 ## External state
 
-- PR #2 remains open and draft on `codex/pr-patch-safety`, targeting `main`; its head is still the baseline commit as of inspection.
-- GitHub reports no checks for that commit and no PR reviews.
-- The working tree was clean before this checkpoint. Commit `0c57dc7` is local and ahead of `origin/codex/pr-patch-safety` by one commit.
-- Push to `origin/codex/pr-patch-safety` was rejected by automatic approval review. The reason given was that authorization for the exact remote destination and source/workflow payload was not established. No workaround was attempted; PR #2 remains unchanged at the baseline head.
+- PR #2 remains open and draft on `codex/pr-patch-safety`, targeting `main`; its head is `996d521` and it has no reviews.
+- Commits `0c57dc7` and `996d521` are pushed to `origin/codex/pr-patch-safety`.
+- The working tree is clean.
 
 ## Limitations and open Phase 0 work
 
 - E2B has not been exercised, and its current API compatibility, cleanup reporting and resource limits remain unverified.
-- Local race testing is unavailable without CGO and a compiler; CI should provide that evidence after the workflow is pushed.
+- Local race testing is unavailable without CGO and a compiler; GitHub Actions supplied successful race-test evidence.
 - Additional adversarial tests for interruption, persistence failures and sandbox/provider failure recovery remain open.
 - Phase 0 is not complete. Do not start Phase 1 until the execution plan's P0 acceptance criteria and exit gate have evidence.
 
 ## Next task
 
-Finish Phase 0: verify the isolated provider or keep validation unavailable, complete adversarial safety coverage, obtain approval to push commit `0c57dc7` to `origin/codex/pr-patch-safety`, confirm GitHub CI results, then reassess the exit gate.
+Finish Phase 0: verify the isolated provider or keep validation unavailable, complete adversarial safety coverage, and reassess every P0 exit criterion.
