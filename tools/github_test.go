@@ -65,6 +65,23 @@ func TestGitHubCloneRejectsRemoteHelperURLs(t *testing.T) {
 	}
 }
 
+func TestBoundedBufferCapsGitCloneDiagnostics(t *testing.T) {
+	var output boundedBuffer
+	output.limit = 8
+
+	written := strings.Repeat("x", 1<<20)
+	n, err := output.Write([]byte(written))
+	if err != nil || n != len(written) {
+		t.Fatalf("Write returned (%d, %v), want full write (%d, nil)", n, err, len(written))
+	}
+	if output.data.Len() != output.limit {
+		t.Fatalf("retained %d bytes, want limit %d", output.data.Len(), output.limit)
+	}
+	if !output.truncated || !strings.Contains(output.String(), "stderr truncated") {
+		t.Fatalf("String() = %q, want a truncation marker", output.String())
+	}
+}
+
 func TestGitCloneArgsDisableCredentialHelpersAndHooks(t *testing.T) {
 	hooksDir := t.TempDir()
 	args := strings.Join(gitCloneArgs("https://github.com/owner/repo.git", "checkout", hooksDir), " ")

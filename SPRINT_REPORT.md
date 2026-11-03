@@ -223,3 +223,11 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - PR #2 metadata confirms it remains open, draft and unmerged at `114ebd4`. The branch is clean and synchronized at this implementation checkpoint.
 - Updated estimate: **88%** across 21 equal-weight acceptance rows: 18 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 2 BLOCKED; `(18 + 0.5) / 21 = 88.1%`. The remaining partial row is explicit mock/live mode coverage. E2B live verification and exact-patch approval/fork publication remain blocked; clone byte quota remains an operational limitation.
 - Documentation checkpoint `0944a79` also passed all jobs in GitHub Actions #76 and #77, including race and Windows AMD64 cross-build; PR #2 remained open, draft and unmerged at that checkpoint.
+
+## Continued clone failure-path audit — 2026-11-03
+
+- Found clone stderr was retained in an unbounded `bytes.Buffer`; subprocess diagnostics now retain at most 64 KiB and append an explicit truncation marker while acknowledging all child writes.
+- Found preprocessing returned a temp workdir after clone or later setup failures, while the CLI only cleans successful runs. `Preprocessor.Run` now removes its workdir on every failed return, preserves cleanup errors, and returns an empty workdir path on failure.
+- Added a large-write cap test and a synthetic partial-clone failure test. Focused tool/agent regressions and `go test ./... -count=1` pass locally; `go vet ./...`, gofmt on changed Go files, and `go build ./...` pass. Build exits 0 with the known restricted module-cache warning. Windows symlink creation remains skipped locally due OS privilege; Linux CI covers it.
+- CI #78/#79 passed on preceding commit `eb533fd`; CI for the current local changes is pending. No live credentials or providers were used.
+- Current estimate: **83%** over 23 equal-weight acceptance rows: 17 VERIFIED, 4 PARTIALLY VERIFIED at half credit, and 2 BLOCKED; `(17 + 4×0.5) / 23 = 82.6%`. The GitHub clone transfer still has no hard byte quota. E2B live execution and exact-patch approval/fork publication remain blocked.

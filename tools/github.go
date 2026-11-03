@@ -28,6 +28,7 @@ import (
 const apiBase = "https://api.github.com"
 
 const maxGitHubResponseBytes = 8 << 20
+const maxGitCloneStderrBytes = 64 << 10
 
 // sampleRepoPath is the deterministic buggy source the mock clones when no real
 // local directory is provided.
@@ -194,12 +195,44 @@ func (g *githubREST) Clone(ctx context.Context, url, dest string) (string, error
 	defer os.RemoveAll(hooksDir)
 	cmd := exec.CommandContext(cloneCtx, "git", gitCloneArgs(canonicalURL, dest, hooksDir)...)
 	cmd.Env = gitCloneEnvironment()
-	var stderr bytes.Buffer
+	var stderr boundedBuffer
+	stderr.limit = maxGitCloneStderrBytes
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("clone: git clone %s: %w: %s", canonicalURL, err, stderr.String())
 	}
 	return dest, nil
+}
+
+// boundedBuffer retains only the first limit bytes while reporting successful
+// writes to subprocesses. This bounds diagnostics without causing the child to
+// fail with a short-write error when it emits more output than we retain.
+type boundedBuffer struct {
+	data      bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	remaining := b.limit - b.data.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			_, _ = b.data.Write(p[:remaining])
+		} else {
+			_, _ = b.data.Write(p)
+		}
+	}
+	if len(p) > remaining {
+		b.truncated = true
+	}
+	return len(p), nil
+}
+
+func (b *boundedBuffer) String() string {
+	if b.truncated {
+		return b.data.String() + "\n...[git clone stderr truncated]"
+	}
+	return b.data.String()
 }
 
 func gitCloneArgs(remote, dest, hooksDir string) []string {

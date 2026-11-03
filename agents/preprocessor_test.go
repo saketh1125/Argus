@@ -1,11 +1,16 @@
 package agents
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/saketh1125/argus/config"
 	"github.com/saketh1125/argus/models"
+	"github.com/saketh1125/argus/tools"
 )
 
 type sourceCandidateTestParser struct{}
@@ -62,5 +67,35 @@ func TestCollectSourceCandidatesSkipsOversizedFiles(t *testing.T) {
 	}
 	if _, tooLarge, err := readIndexedSourceFile(oversizedPath); err != nil || !tooLarge {
 		t.Fatalf("bounded read = tooLarge:%v err:%v, want tooLarge with no error", tooLarge, err)
+	}
+}
+
+type partialCloneFailure struct {
+	tools.GitHubClient
+	dest string
+}
+
+func (g *partialCloneFailure) Clone(_ context.Context, _, dest string) (string, error) {
+	g.dest = dest
+	if err := os.WriteFile(filepath.Join(dest, "partial-pack-data"), []byte("partial"), 0o600); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("synthetic interrupted clone")
+}
+
+func TestPreprocessorCleansWorkdirWhenCloneFails(t *testing.T) {
+	base := tools.NewGitHub(&config.Config{ForceMock: true})
+	github := &partialCloneFailure{GitHubClient: base}
+	pre := NewPreprocessor(github, sourceCandidateTestParser{}, nil, nil, &config.Config{MaxFiles: 1}, models.NoopReporter{})
+
+	_, workdir, _, _, err := pre.Run(context.Background(), "https://github.com/owner/repo")
+	if err == nil || !strings.Contains(err.Error(), "synthetic interrupted clone") {
+		t.Fatalf("Run error = %v, want clone failure", err)
+	}
+	if workdir != "" {
+		t.Fatalf("failed Run returned workdir %q, want empty path", workdir)
+	}
+	if _, statErr := os.Stat(github.dest); !os.IsNotExist(statErr) {
+		t.Fatalf("partial workdir still exists after clone failure: stat error = %v", statErr)
 	}
 }

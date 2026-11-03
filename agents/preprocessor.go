@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -69,6 +70,16 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	if err != nil {
 		return nil, "", owner, repo, fmt.Errorf("preprocessor: create workdir: %w", err)
 	}
+	keepWorkdir := false
+	defer func() {
+		if keepWorkdir {
+			return
+		}
+		if cleanupErr := os.RemoveAll(workdir); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("preprocessor: clean failed workdir: %w", cleanupErr))
+		}
+		workdir = ""
+	}()
 
 	if _, err = p.gh.Clone(ctx, repoURL, workdir); err != nil {
 		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone %q: %w", repoURL, err)
@@ -133,6 +144,7 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 
 	p.rep.SetStage(models.StageIngest, 100)
 	p.rep.Log("preprocessor: indexed %d files, %d signatures", idx.FileCount(), len(idx.Signatures()))
+	keepWorkdir = true
 	return idx, workdir, owner, repo, nil
 }
 

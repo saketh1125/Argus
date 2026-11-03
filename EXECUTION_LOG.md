@@ -212,3 +212,11 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Documentation checkpoint `0944a79cc1148c7ea850700bc471158c8c4d98ad` passed GitHub Actions [#76](https://github.com/saketh1125/Argus/actions/runs/41685441353) and [#77](https://github.com/saketh1125/Argus/actions/runs/41685450175). Formatting, tests, vet, race, native build, Windows AMD64 cross-build, and every step succeeded.
 - Read-only GitHub API metadata confirms PR #2 is still open, draft and unmerged at `0944a79`. The working tree is synchronized and clean at the verified checkpoint before this log entry.
 - Phase 0 remains IN PROGRESS at 88% checklist estimate. E2B live behavior and exact-patch approval/fork publication remain BLOCKED; clone transfer has no byte quota.
+
+## 2026-11-03 — Clone diagnostics and failed-workdir cleanup
+
+- **Medium — Git clone stderr accumulation was unbounded.** Added a writer that retains no more than 64 KiB and marks truncated diagnostics without causing subprocess short writes.
+- **Medium — failed preprocessing could leave a partial checkout in the system temp directory.** `Preprocessor.Run` now removes its workdir on every unsuccessful return, joins a cleanup error if necessary, and clears the returned path. A regression makes the mock clone write partial data and then fail, and confirms the directory is removed.
+- Focused clone and preprocessing tests — PASS. `go test ./... -count=1` — PASS. `go vet ./...`, changed-file gofmt, and `git diff --check` — PASS. `go build ./...` — exit 0 with restricted Go module-cache warning. Symlink regression skipped locally on Windows because the required privilege is unavailable; prior Ubuntu CI #65 executed it.
+- Current local changes are uncommitted and pending CI; last pushed checkpoint `eb533fd` passed CI #78/#79. No live credentials or providers were used.
+- Interim estimate is 83% across 23 acceptance rows: 17 VERIFIED, 4 PARTIALLY VERIFIED at half weight, 2 BLOCKED. E2B and approval/fork publication blockers remain; a hard Git clone transfer byte quota is still unresolved.
