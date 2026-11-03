@@ -21,6 +21,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -120,6 +121,7 @@ func copyDirContents(root *os.Root, dst string, budget *copyBudget) error {
 	if err != nil {
 		return fmt.Errorf("copy dir: read source directory: %w", err)
 	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
 		if budget.remainingEntries <= 0 {
 			return fmt.Errorf("copy dir: entry count exceeds configured limit")
