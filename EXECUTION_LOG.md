@@ -184,3 +184,9 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Committed the per-file size bound and checkpoint updates as `78f775a55656494072f5ae7f63abb1e0682443d4`; pushed a fast-forward from `3ec51e1`.
 - GitHub Actions run [#69](https://github.com/saketh1125/Argus/actions/runs/41683305374) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build. The oversized-file and bounded-read regression ran in CI.
 - Per-file preprocessing input bounds and the current CI gate are now VERIFIED. The remaining clone transfer byte-quota gap is documented. E2B live execution and exact-patch approval/fork publication remain blocked; no secrets or live services were used.
+
+## 2026-11-03 — Current PR and checkpoint CI state
+
+- Read-only GitHub metadata showed PR #2 open, draft and unmerged, targeting `main`, with head `fd0ee9ce989ef003c9e4937c4c419ca95852b014` at the time of this check.
+- GitHub Actions run [#71](https://github.com/saketh1125/Argus/actions/runs/41683558156) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build on checkpoint commit `fd0ee9c`.
+- Working tree was clean and branch `codex/pr-patch-safety` matched origin at the checked head. Phase 0 remains IN PROGRESS due E2B verification and disabled exact-patch/fork publication.

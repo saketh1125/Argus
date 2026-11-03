@@ -109,7 +109,7 @@ Current working-copy estimate: **87%** by equal-weight checklist scoring: 16 of 
 
 ### Current estimate and status
 
-Current estimate: **88%** by equal-weight checklist scoring: 17 of 20 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. The source-file bound and current code passed CI #69. E2B and publication workflow blockers remain; clone transfer byte quota is an additional medium operational limitation.
+Current estimate: **88%** by equal-weight checklist scoring: 17 of 20 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. The source-file bound passed CI #69; checkpoint head `fd0ee9c` passed CI #71. PR #2 was open, draft and unmerged at `fd0ee9c`. E2B and publication workflow blockers remain; clone transfer byte quota is an additional medium operational limitation.
 
 ## Continued audit — 2026-11-03
 
