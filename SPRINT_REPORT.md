@@ -262,3 +262,9 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Expanded the byte-budget test to verify aggregate exhaustion across multiple files and success at the exact byte limit. Focused tests and full `go test ./... -count=1` pass locally.
 - CI run 41688981532 passed on documentation checkpoint `2cd61ae`; the newly strengthened regression is awaiting CI. No implementation logic changed in this test refinement.
 - Interim estimate returns to **82%** while CI and the strengthened test row are PARTIALLY VERIFIED: 19 VERIFIED, 3 PARTIALLY VERIFIED at half weight, 3 BLOCKED across 25 rows; `(19 + 1.5) / 25 = 82%`.
+
+## Aggregate-copy regression CI confirmation — 2026-11-03
+
+- Commit `6c7dbf4022aaa597612f580d01b6dd2726f5b593` passed CI run [41689430471](https://github.com/saketh1125/Argus/actions/runs/41689430471): formatting, full tests, vet, race, native build and Windows AMD64 cross-build all passed.
+- PR #2 remains open, draft and unmerged at `6c7dbf4`; local branch is clean and synchronized.
+- Current estimate: **86%** across 25 equal-weight rows: 21 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 3 BLOCKED; `(21 + 0.5) / 25 = 86%`. The partial row is explicit mock/live state. Blockers are remote Git transfer quota, live E2B verification, and exact-patch approval/fork publication.

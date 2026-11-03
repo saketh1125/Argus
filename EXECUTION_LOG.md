@@ -258,3 +258,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Strengthened the byte-budget regression to prove aggregate accounting across multiple files and success exactly at the byte limit. Focused and full Go tests pass locally.
 - This test-only refinement is pending CI; checkpoint run 41688981532 passed on `2cd61ae`. No live services or credentials were used.
 - Interim checklist estimate is 82% (19 VERIFIED, 3 PARTIALLY VERIFIED at half weight, 3 BLOCKED across 25 rows) until the strengthened regression passes CI.
+
+## 2026-11-03 — Aggregate-copy bounds CI confirmation
+
+- Pushed `6c7dbf4022aaa597612f580d01b6dd2726f5b593` as a fast-forward from `2cd61ae`.
+- CI run [41689430471](https://github.com/saketh1125/Argus/actions/runs/41689430471) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build; every step succeeded.
+- The aggregate byte, exact-limit and entry-budget tests now pass CI. PR #2 is open/draft/unmerged at `6c7dbf4`; working tree is clean and synchronized.
+- Corrected checklist status is 86%: 21 VERIFIED, 1 PARTIALLY VERIFIED at half credit and 3 BLOCKED out of 25 rows. Remote Git transfer quota, E2B live execution and exact-patch approval/fork publication remain outstanding.
