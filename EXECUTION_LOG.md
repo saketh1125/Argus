@@ -92,6 +92,12 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - GitHub Actions [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546) passed all configured checks on the validation-provenance implementation.
 - PR #2 remains open, draft and unmerged; E2B and live publication remain disabled.
 
+## 2026-11-03 — Checkpoint documentation CI
+
+- Documentation checkpoint `53ccad0a6a6309e8e103cc41ff8cfb8b2ac4f25d` was pushed fast-forward to the PR branch.
+- GitHub Actions [#51](https://github.com/saketh1125/Argus/actions/runs/41665401475) passed all configured checks on the checkpoint.
+- PR #2 remains open, draft and unmerged.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

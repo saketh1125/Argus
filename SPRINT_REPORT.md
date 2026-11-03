@@ -54,6 +54,7 @@ P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, no-side-effe
 - Continuation commits `8a88254`, `6c88dbc`, and `f22c54e` are pushed. GitHub Actions run [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed all configured CI jobs on `f22c54e`.
 - Documentation checkpoint `d9b82a2` is pushed; GitHub Actions run [#45](https://github.com/saketh1125/Argus/actions/runs/41662912698) passed all configured checks. PR #2 remains open, draft and unmerged.
 - Documentation checkpoint `e5c67fa` is pushed; GitHub Actions run [#47](https://github.com/saketh1125/Argus/actions/runs/41663259463) passed all configured checks.
+- Validation-provenance implementation `ee0c9c8` passed run [#49](https://github.com/saketh1125/Argus/actions/runs/41665041546); documentation checkpoint `53ccad0` passed run [#51](https://github.com/saketh1125/Argus/actions/runs/41665401475).
 
 ### Validation provenance correction
 
