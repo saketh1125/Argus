@@ -233,3 +233,9 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Checkpoint `1cec25b981bcb97c343c64d866e05ec33a50a7e9` passed GitHub Actions [#82](https://github.com/saketh1125/Argus/actions/runs/41687009058): formatting, tests, vet, race, native build and Windows AMD64 cross-build all succeeded.
 - Read-only GitHub API metadata confirms PR #2 remains open, draft and unmerged at `1cec25b`. The worktree is clean and synchronized at the checked head.
 - Phase 0 remains IN PROGRESS. The hard clone transfer byte quota, live E2B execution and exact-patch approval/fork publication are outstanding.
+
+## 2026-11-03 — Completion estimate denominator correction
+
+- Split the hard clone transfer/disk quota into a separate BLOCKED acceptance row. The earlier 23-row estimate mentioned this gap but did not count it, so its 89% figure overstated coverage.
+- Corrected estimate is **85%** across 24 equal-weight rows: 20 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 3 BLOCKED; `(20 + 0.5) / 24 = 85.4%`.
+- This is a documentation correction only. The implementation checkpoint remains `bebaa31` (CI #80 passed), and the latest documentation checkpoint `e284e24` passed CI #84. No implementation or CI evidence was removed.

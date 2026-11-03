@@ -230,11 +230,16 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Found preprocessing returned a temp workdir after clone or later setup failures, while the CLI only cleans successful runs. `Preprocessor.Run` now removes its workdir on every failed return, preserves cleanup errors, and returns an empty workdir path on failure.
 - Added a large-write cap test and a synthetic partial-clone failure test. Focused tool/agent regressions and `go test ./... -count=1` pass locally; `go vet ./...`, gofmt on changed Go files, and `go build ./...` pass. Build exits 0 with the known restricted module-cache warning. Windows symlink creation remains skipped locally due OS privilege; Linux CI covers it.
 - CI #78/#79 passed on preceding commit `eb533fd`; CI for the current local changes is pending. No live credentials or providers were used.
-- Current estimate: **83%** over 23 equal-weight acceptance rows: 17 VERIFIED, 4 PARTIALLY VERIFIED at half credit, and 2 BLOCKED; `(17 + 4×0.5) / 23 = 82.6%`. The GitHub clone transfer still has no hard byte quota. E2B live execution and exact-patch approval/fork publication remain blocked.
+- At that checkpoint, the estimate was **83%** over 23 equal-weight rows: 17 VERIFIED, 4 PARTIALLY VERIFIED at half credit, and 2 BLOCKED; `(17 + 4×0.5) / 23 = 82.6%`. The later completion audit adds clone transfer byte quota as a separate BLOCKED criterion.
 
 ## Clone failure-path CI confirmation — 2026-11-03
 
 - Implementation commit `bebaa311302175163a781060307a81e9bccaee7f` passed GitHub Actions [#80](https://github.com/saketh1125/Argus/actions/runs/41686622449). Formatting, full tests, vet, race, native build and Windows AMD64 cross-build all passed.
 - PR #2 remains open, draft and unmerged at `bebaa31`; the working tree is clean and the branch matches origin at this checkpoint.
-- Updated estimate: **89%** over 23 equal-weight acceptance rows: 20 VERIFIED, 1 PARTIALLY VERIFIED at half credit, 2 BLOCKED; `(20 + 0.5) / 23 = 89.1%`. The one partial row is explicit mock/live state coverage. E2B live behavior and exact-patch approval/fork publication remain blocked; clone transfer still lacks a hard byte quota.
+- At this checkpoint, the implementation scored **89%** over 23 rows before the clone transfer quota was included as its own criterion. The completion audit below corrects the denominator and status.
 - Documentation checkpoint `1cec25b` passed GitHub Actions [#82](https://github.com/saketh1125/Argus/actions/runs/41687009058) with every required job step successful. PR #2 remains open/draft/unmerged at that head.
+
+## Completion checklist correction — 2026-11-03
+
+- The 23-row estimate counted per-file preprocessing bounds as verified while only mentioning the unbounded full Git transfer in its evidence. Split those requirements so the hard clone-transfer quota is an explicit **BLOCKED** acceptance row.
+- Corrected estimate: **85%** over 24 equal-weight rows: 20 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 3 BLOCKED; `(20 + 0.5) / 24 = 85.4%`. Blockers are live E2B execution, exact-patch approval/fork publication, and a hard clone transfer/disk quota. This is a more complete denominator than the prior 89% figure.
