@@ -256,3 +256,9 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Commit `430aa38cadd8d056fe985c7559d80047031f15ff` passed both connected GitHub checks [41688619335](https://github.com/saketh1125/Argus/actions/runs/41688619335) and [41688631081](https://github.com/saketh1125/Argus/actions/runs/41688631081). Both passed formatting, tests, vet, race, native build and Windows AMD64 cross-build; every job step succeeded.
 - PR #2 was verified open, draft and unmerged at `430aa38`; the branch was clean and synchronized at that implementation checkpoint.
 - Updated estimate: **86%** over 25 equal-weight rows: 21 VERIFIED, 1 PARTIALLY VERIFIED at half credit, 3 BLOCKED; `(21 + 0.5) / 25 = 86%`. Remaining blockers are remote Git clone transfer/disk quota, E2B live verification, and exact-patch approval/fork publication. Explicit mock/live state remains partially verified.
+
+## Aggregate-copy regression refinement — 2026-11-03
+
+- Expanded the byte-budget test to verify aggregate exhaustion across multiple files and success at the exact byte limit. Focused tests and full `go test ./... -count=1` pass locally.
+- CI run 41688981532 passed on documentation checkpoint `2cd61ae`; the newly strengthened regression is awaiting CI. No implementation logic changed in this test refinement.
+- Interim estimate returns to **82%** while CI and the strengthened test row are PARTIALLY VERIFIED: 19 VERIFIED, 3 PARTIALLY VERIFIED at half weight, 3 BLOCKED across 25 rows; `(19 + 1.5) / 25 = 82%`.

@@ -252,3 +252,9 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Pushed implementation `430aa38cadd8d056fe985c7559d80047031f15ff` as a fast-forward from `12f3e27`.
 - Connected GitHub checks [41688619335](https://github.com/saketh1125/Argus/actions/runs/41688619335) and [41688631081](https://github.com/saketh1125/Argus/actions/runs/41688631081) both passed formatting, tests, vet, race, native build and Windows AMD64 cross-build on `430aa38`; every job step succeeded.
 - The 256 MiB/100,000-entry local-copy limits and regressions are now VERIFIED. Remote Git HTTPS transfer remains unbounded. Current score is 86% across 25 acceptance rows: 21 VERIFIED, 1 PARTIALLY VERIFIED at half credit, 3 BLOCKED.
+
+## 2026-11-03 — Aggregate budget regression refinement
+
+- Strengthened the byte-budget regression to prove aggregate accounting across multiple files and success exactly at the byte limit. Focused and full Go tests pass locally.
+- This test-only refinement is pending CI; checkpoint run 41688981532 passed on `2cd61ae`. No live services or credentials were used.
+- Interim checklist estimate is 82% (19 VERIFIED, 3 PARTIALLY VERIFIED at half weight, 3 BLOCKED across 25 rows) until the strengthened regression passes CI.

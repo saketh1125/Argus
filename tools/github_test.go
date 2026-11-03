@@ -61,15 +61,31 @@ func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
 func TestCopyDirEnforcesAggregateByteAndEntryBudgets(t *testing.T) {
 	t.Run("bytes", func(t *testing.T) {
 		source := t.TempDir()
-		if err := os.WriteFile(filepath.Join(source, "file.txt"), []byte("12345"), 0o600); err != nil {
+		for name, data := range map[string]string{"a.txt": "123", "b.txt": "456"} {
+			if err := os.WriteFile(filepath.Join(source, name), []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		dest := filepath.Join(t.TempDir(), "copy")
+		if err := copyDirWithBudget(source, dest, 5, 10); err == nil || !strings.Contains(err.Error(), "byte") {
+			t.Fatalf("copyDirWithBudget error = %v, want byte-budget error", err)
+		}
+		if data, err := os.ReadFile(filepath.Join(dest, "a.txt")); err != nil || string(data) != "123" {
+			t.Fatalf("first file copy = %q, %v; want successful 3-byte copy", data, err)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "b.txt")); !os.IsNotExist(err) {
+			t.Fatalf("file beyond aggregate budget was copied: stat error = %v", err)
+		}
+	})
+
+	t.Run("exact byte boundary", func(t *testing.T) {
+		source := t.TempDir()
+		if err := os.WriteFile(filepath.Join(source, "exact.txt"), []byte("123"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		dest := filepath.Join(t.TempDir(), "copy")
-		if err := copyDirWithBudget(source, dest, 4, 10); err == nil || !strings.Contains(err.Error(), "byte") {
-			t.Fatalf("copyDirWithBudget error = %v, want byte-budget error", err)
-		}
-		if _, err := os.Stat(filepath.Join(dest, "file.txt")); !os.IsNotExist(err) {
-			t.Fatalf("oversized file was copied: stat error = %v", err)
+		if err := copyDirWithBudget(source, dest, 3, 1); err != nil {
+			t.Fatalf("exact-boundary copy failed: %v", err)
 		}
 	})
 
