@@ -375,7 +375,7 @@ func extractTarGzipWithLimits(input io.Reader, dest string, maxExpanded, maxFile
 		}
 		name := strings.TrimSuffix(h.Name, "/")
 		clean := path.Clean(name)
-		if clean == "." || strings.HasPrefix(clean, "../") || path.IsAbs(name) || strings.Contains(name, "\\") || strings.ContainsRune(name, '\x00') || clean != name || !filepath.IsLocal(filepath.FromSlash(clean)) {
+		if clean == "." || strings.HasPrefix(clean, "../") || path.IsAbs(name) || strings.ContainsAny(name, ":\\\x00") || clean != name || !filepath.IsLocal(filepath.FromSlash(clean)) {
 			return fmt.Errorf("archive contains unsafe path")
 		}
 		parts := strings.SplitN(clean, "/", 2)
