@@ -178,3 +178,9 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Added a regression proving oversized files are excluded and bounded reads stop at the cap. Focused and full Go tests, vet and build passed locally. Build exited 0 with the known restricted stat-cache warning.
 - README documents the per-file limit and states that the two-minute live clone timeout does not provide a download byte quota. The clone transfer storage bound remains unimplemented.
 - Local change is pending CI; no secrets or live providers were used.
+
+## 2026-11-03 — Per-file byte limit CI confirmation
+
+- Committed the per-file size bound and checkpoint updates as `78f775a55656494072f5ae7f63abb1e0682443d4`; pushed a fast-forward from `3ec51e1`.
+- GitHub Actions run [#69](https://github.com/saketh1125/Argus/actions/runs/41683305374) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build. The oversized-file and bounded-read regression ran in CI.
+- Per-file preprocessing input bounds and the current CI gate are now VERIFIED. The remaining clone transfer byte-quota gap is documented. E2B live execution and exact-patch approval/fork publication remain blocked; no secrets or live services were used.

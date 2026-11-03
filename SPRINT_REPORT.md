@@ -105,11 +105,11 @@ Current working-copy estimate: **87%** by equal-weight checklist scoring: 16 of 
 ### Verification
 
 - Focused candidate and bounded-read tests — PASS. `go test ./... -count=1` — PASS; `go vet ./...` — PASS; `go build ./...` — exit 0 with the restricted module stat-cache warning.
-- CI run #67 passed on documentation head `3ec51e1`, before this source change. CI for the new size-bound code is pending. No provider credentials or live operations were used.
+- CI run [#69](https://github.com/saketh1125/Argus/actions/runs/41683305374) passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build on `78f775a`. The bounded-read regressions were included. No provider credentials or live operations were used.
 
 ### Current estimate and status
 
-Current working-copy estimate: **83%** by equal-weight checklist scoring: 15 of 20 rows VERIFIED, 3 PARTIALLY VERIFIED, and 2 BLOCKED (each partial counts as one half). Source byte limiting and current-code CI are partial until CI passes. E2B and publication workflow blockers remain; clone transfer byte quota is an additional medium operational limitation.
+Current estimate: **88%** by equal-weight checklist scoring: 17 of 20 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. The source-file bound and current code passed CI #69. E2B and publication workflow blockers remain; clone transfer byte quota is an additional medium operational limitation.
 
 ## Continued audit — 2026-11-03
 
