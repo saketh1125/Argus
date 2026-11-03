@@ -63,6 +63,12 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - PR #2 remains open, draft and unmerged at `f22c54e`.
 - GitHub Actions [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed formatting, tests, vet, race tests, native build and Windows AMD64 build on the current head.
 
+## 2026-11-03 — Checkpoint documentation CI
+
+- Documentation checkpoint `9f05f925fb1ddde732c98cc6b610b741d6b09de8` was pushed fast-forward after recording the Git hook hardening result.
+- PR #2 remained open, draft and unmerged at `9f05f92`.
+- GitHub Actions [#43](https://github.com/saketh1125/Argus/actions/runs/41662533632) passed all configured checks on the documentation checkpoint.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

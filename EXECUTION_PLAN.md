@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; current head `f22c54e7841e91e4b929bf0d54e24f67b8df96cb`. GitHub Actions [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674) passed formatting, tests, vet, race, native build and Windows AMD64 build. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; implementation commit `f22c54e7841e91e4b929bf0d54e24f67b8df96cb` passed CI [#41](https://github.com/saketh1125/Argus/actions/runs/41662158674). Documentation checkpoint `9f05f925fb1ddde732c98cc6b610b741d6b09de8` passed CI [#43](https://github.com/saketh1125/Argus/actions/runs/41662533632). | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
