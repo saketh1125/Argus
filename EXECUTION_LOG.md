@@ -199,3 +199,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused service tests — PASS. `go test ./... -count=1` — PASS. `go vet ./...` — PASS. `go build ./...` — exit 0 with the restricted module stat-cache access warning. `git diff --check` — PASS; Git reports line-ending conversion warnings.
 - No credentials or live provider calls were used. Latest confirmed pushed checkpoint remains `8640790`, with CI run [#73](https://github.com/saketh1125/Argus/actions/runs/41683949872) passing there; current local source changes are pending CI.
 - The current acceptance estimate is 83%: 16 of 21 rows VERIFIED, 3 PARTIALLY VERIFIED at half credit, 2 BLOCKED. E2B live verification and exact-patch approval/fork publication remain blocked; clone transfer still has no byte quota.
+
+## 2026-11-03 — Provider-boundary CI confirmation
+
+- Pushed implementation commit `114ebd46ab3e494c02170976b9b7df91080ac948` as a fast-forward from `8640790`.
+- GitHub Actions [#74](https://github.com/saketh1125/Argus/actions/runs/41685108596) and [#75](https://github.com/saketh1125/Argus/actions/runs/41685120189) both passed formatting, tests, vet, race test, native build and Windows AMD64 cross-build. The single `verify` job and every step passed on the pushed head.
+- Read-only GitHub API metadata confirms PR #2 is open, draft and unmerged at `114ebd4`. Working tree was clean and synchronized before this documentation checkpoint.
+- Provider-response and retry bounds are now VERIFIED with local mocked regressions and current-head CI. The current equal-weight estimate is 88%: 18/21 VERIFIED, 1/21 PARTIALLY VERIFIED at half credit, and 2/21 BLOCKED. E2B behavior and exact-patch approval/fork publication remain unresolved; clone transfer still lacks a byte quota.

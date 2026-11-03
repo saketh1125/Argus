@@ -215,3 +215,10 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 - Latest confirmed remote checkpoint was `8640790`; CI run [#73](https://github.com/saketh1125/Argus/actions/runs/41683949872) passed all configured jobs on that checkpoint. CI for these current local changes is pending.
 - Current estimate: **83%** by equal-weight scoring across 21 acceptance rows: 16 VERIFIED, 3 PARTIALLY VERIFIED at half weight, 2 BLOCKED; `(16 + 1.5) / 21 = 83.3%`. The two blocked requirements remain live isolated-provider verification and exact-patch approval/fork-based publication. Clone transfer still lacks a byte quota.
 - PR #2 was last checked open, draft and unmerged at `8640790`. Current changes are local and not yet committed.
+
+## Provider-boundary CI confirmation — 2026-11-03
+
+- Commit `114ebd46ab3e494c02170976b9b7df91080ac948` was pushed as a normal fast-forward from `8640790`.
+- GitHub Actions [#74](https://github.com/saketh1125/Argus/actions/runs/41685108596) and [#75](https://github.com/saketh1125/Argus/actions/runs/41685120189) both passed formatting, `go test ./...`, vet, race test, native build and Windows AMD64 cross-build. The run job and every step concluded successfully.
+- PR #2 metadata confirms it remains open, draft and unmerged at `114ebd4`. The branch is clean and synchronized at this implementation checkpoint.
+- Updated estimate: **88%** across 21 equal-weight acceptance rows: 18 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 2 BLOCKED; `(18 + 0.5) / 21 = 88.1%`. The remaining partial row is explicit mock/live mode coverage. E2B live verification and exact-patch approval/fork publication remain blocked; clone byte quota remains an operational limitation.
