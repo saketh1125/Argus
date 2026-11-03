@@ -166,7 +166,7 @@ func run() error {
 		return fmt.Errorf("fix generation: %w", err)
 	}
 
-	val := agents.NewValidator(clients.Sandbox, clients.LLM, parser, cfg, rep)
+	val := agents.NewValidator(clients.Sandbox, parser, cfg, rep)
 	validated, err := val.Run(ctx, workdir, fixed)
 	if err != nil {
 		return fmt.Errorf("validation: %w", err)

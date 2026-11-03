@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | NOT STARTED | — | Establish baseline; fix host execution and incomplete patch fallback |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; `go test ./...`, `go vet ./...`, and `go build ./...` pass on Windows/AMD64. Host-local sandbox removed; mock run reports unavailable validation and demotes two fixes. CI workflow added locally. | Race test unavailable locally (`CGO_ENABLED=0`, no C compiler); E2B integration and remaining adversarial checks unverified; GitHub CI has not run for this working change. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -929,14 +929,13 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 ### Current next action
 
-Start **P0.1 — Establish local baseline**. Do not add features yet.
+Continue **P0 — Baseline and critical safety fixes**. Do not start Phase 1 until every P0 acceptance criterion has evidence.
 
-1. Inspect git status and current commit.
-2. Run and record current test/build checks.
-3. Reproduce current adapter selection.
-4. Trace unsafe sandbox execution and incomplete patch fallback.
-5. Implement and test the two P0 fixes.
-6. Stop and report against the P0 exit gate.
+1. Verify the isolated provider API, cleanup guarantees and resource limits; do not count E2B as safe until its current integration is exercised and observed.
+2. Add/execute adversarial tests for no host execution, generated-command rejection, persistence failures and interrupted/failed validation.
+3. Confirm patch provenance and complete-file rejection tests cover stale and unauthorized changes.
+4. Push the CI workflow and this safety change on the existing PR branch, then record actual GitHub check results.
+5. Reassess every P0 acceptance criterion and stop at the P0 exit gate.
 
 ---
 
@@ -950,6 +949,7 @@ Record only decisions that materially change this plan. Do not create parallel n
 | 2026-11-01 | Repository discovery frozen as curated | No autonomous GitHub-wide discovery in V1 |
 | 2026-11-01 | Fork-based publishing and explicit approval required | No direct upstream writes and no automatic merging |
 | 2026-11-01 | This file is the canonical execution source | Earlier plans/specifications are reference-only |
+| 2026-11-03 | Missing isolation must make validation unavailable | Removed the host-local command executor; mock mode cannot claim repository validation |
 
 ---
 

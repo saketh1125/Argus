@@ -50,7 +50,7 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 		},
 	}
 
-	v := NewValidator(passSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	v := NewValidator(passSandbox{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	out, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -89,7 +89,7 @@ func TestValidatorFailsClosedWhenSourceFileMissing(t *testing.T) {
 		File: "missing.go", FunctionName: "f",
 		Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() {}"}}},
 	}
-	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	_, err := v.Run(context.Background(), t.TempDir(), []*models.Issue{iss})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestValidatorRejectsStaleOriginalFunctionBeforeSandbox(t *testing.T) {
 		File: "f.go", FunctionName: "f",
 		Fix: &models.Fix{OriginalFunction: "func f() int { return 9 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
 	}
-	v := NewValidator(sandbox, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil {
 		t.Fatal(err)
@@ -119,35 +119,26 @@ func TestValidatorRejectsStaleOriginalFunctionBeforeSandbox(t *testing.T) {
 	}
 }
 
-func TestLocalSandboxValidationDoesNotRunGeneratedTestCommands(t *testing.T) {
+func TestValidatorDoesNotGenerateTestCommands(t *testing.T) {
 	original := "package main\nfunc f() {}\n"
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	llm := &countingLLM{}
 	iss := &models.Issue{
 		File: "f.go", FunctionName: "f",
 		Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() {}"}}},
 	}
-	v := NewValidator(&recordSandbox{}, llm, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	sandbox := &recordSandbox{}
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if llm.calls != 0 {
-		t.Fatalf("local sandbox must not call testgen; calls=%d", llm.calls)
+	if len(sandbox.specs) != 1 || len(sandbox.specs[0].Commands) != 1 {
+		t.Fatalf("validator must provide only its deterministic syntax command, specs=%+v", sandbox.specs)
 	}
 }
-
-type countingLLM struct{ calls int }
-
-func (llm *countingLLM) Complete(context.Context, services.CompletionRequest) (*services.CompletionResponse, error) {
-	llm.calls++
-	return &services.CompletionResponse{Text: `{"filename":"../../outside.go","test_code":"bad","run_cmd":"echo unsafe"}`}, nil
-}
-func (*countingLLM) Name() string { return "counting" }
-func (*countingLLM) Live() bool   { return false }
 
 type recordSandbox struct{ specs []services.SandboxSpec }
 

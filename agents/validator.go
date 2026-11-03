@@ -18,21 +18,20 @@ import (
 
 // Validator proves a fix compiles before it can become a PR. For each issue it
 // applies the selected candidate to the file on disk under workdir, builds a
-// SandboxSpec with a language-appropriate syntax check (optionally generating a
-// test via Task=testgen when none exists), and runs it in the sandbox. On success
+// SandboxSpec with a deterministic language-appropriate syntax check and runs it
+// in the sandbox. On success
 // it sets Issue.Validated=true; on syntax failure it retries once with the next
 // ranked candidate; on final failure it marks Validated=false and Demoted=true.
 type Validator struct {
 	sandbox services.Sandbox
-	llm     services.LLMClient
 	parser  tools.CodeParser
 	cfg     *config.Config
 	rep     models.Reporter
 }
 
-// NewValidator wires the validator with its sandbox, LLM, and parser deps.
-func NewValidator(sandbox services.Sandbox, llm services.LLMClient, parser tools.CodeParser, cfg *config.Config, rep models.Reporter) *Validator {
-	return &Validator{sandbox: sandbox, llm: llm, parser: parser, cfg: cfg, rep: rep}
+// NewValidator wires the validator with its sandbox and parser dependencies.
+func NewValidator(sandbox services.Sandbox, parser tools.CodeParser, cfg *config.Config, rep models.Reporter) *Validator {
+	return &Validator{sandbox: sandbox, parser: parser, cfg: cfg, rep: rep}
 }
 
 // Run validates every issue's selected fix and returns the issues (mutated in
@@ -136,7 +135,7 @@ func (v *Validator) validate(ctx context.Context, workdir string, iss *models.Is
 			continue
 		}
 
-		spec := v.buildSpec(ctx, lang, iss.File, patched, cand.RewrittenFunction)
+		spec := v.buildSpec(lang, iss.File, patched)
 		res, serr := v.sandbox.Run(ctx, spec)
 		if serr != nil {
 			lastLog = fmt.Sprintf("attempt %d: sandbox error: %v", attempt+1, serr)
@@ -233,23 +232,12 @@ func safeRepoFile(root, rel string) (string, error) {
 	return targetReal, nil
 }
 
-// buildSpec assembles a SandboxSpec: write the patched file, run the syntax check,
-// and — when no test is present — optionally synthesize and run a minimal test.
-func (v *Validator) buildSpec(ctx context.Context, lang, relFile, patched, rewrite string) services.SandboxSpec {
+// buildSpec assembles a SandboxSpec with a deterministic syntax check. Model
+// generated test commands are excluded until commands use an explicit allowlist
+// and argument arrays.
+func (v *Validator) buildSpec(lang, relFile, patched string) services.SandboxSpec {
 	files := map[string]string{relFile: patched}
 	commands := agtSyntaxCmd(lang, relFile)
-
-	// If there are no obvious tests, try to generate a minimal one.
-	// Generated test commands execute repository code. Only invoke them inside
-	// the isolated remote sandbox; the host-local executor remains syntax-only.
-	if v.sandbox.Live() {
-		if test, ok := v.maybeGenTest(ctx, lang, relFile, rewrite); ok {
-			files[test.Filename] = test.TestCode
-			if test.RunCmd != "" {
-				commands = append(commands, test.RunCmd)
-			}
-		}
-	}
 
 	timeout := v.cfg.SandboxTimeout
 	if timeout <= 0 {
@@ -261,30 +249,4 @@ func (v *Validator) buildSpec(ctx context.Context, lang, relFile, patched, rewri
 		Commands:   commands,
 		TimeoutSec: timeout,
 	}
-}
-
-// maybeGenTest asks the LLM (Task=testgen) for a minimal test for the rewritten
-// function. Any failure simply yields ok=false (tests are optional).
-func (v *Validator) maybeGenTest(ctx context.Context, lang, relFile, rewrite string) (models.TestGenResult, bool) {
-	user := fmt.Sprintf("Write one minimal %s test that imports/exercises this function so a syntax+smoke check passes.\nFile: %s\nFunction:\n%s",
-		lang, relFile, rewrite)
-	req := services.CompletionRequest{
-		System: "You generate a single minimal test. Return ONLY JSON matching " +
-			"{\"filename\":string,\"test_code\":string,\"run_cmd\":string}.",
-		User:      user,
-		Task:      models.TaskTestGen,
-		JSONMode:  true,
-		MaxTokens: 1024,
-	}
-	resp, err := v.llm.Complete(ctx, req)
-	if err != nil || resp == nil {
-		v.rep.Log("testgen: LLM FAILED: %v", err)
-		return models.TestGenResult{}, false
-	}
-	var res models.TestGenResult
-	if err := agtParseJSON(resp.Text, &res); err != nil || res.Filename == "" || res.TestCode == "" {
-		v.rep.Log("testgen: JSON parse FAILED: %v", err)
-		return models.TestGenResult{}, false
-	}
-	return res, true
 }

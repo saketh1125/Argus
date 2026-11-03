@@ -32,8 +32,18 @@ func TestForceMockSelectsAllMocks(t *testing.T) {
 	if c.Mode != "mock" {
 		t.Fatalf("expected Mode mock, got %q", c.Mode)
 	}
+	if c.Sandbox.Name() != "unavailable" {
+		t.Fatalf("mock mode must not select a host executor, got sandbox %q", c.Sandbox.Name())
+	}
 	if c.Limiter == nil {
 		t.Fatalf("limiter should be wired")
+	}
+}
+
+func TestMissingE2BSelectsUnavailableSandbox(t *testing.T) {
+	got := selectSandbox(&config.Config{})
+	if got.Name() != "unavailable" || got.Live() {
+		t.Fatalf("missing isolated provider must be reported unavailable, got %q live=%v", got.Name(), got.Live())
 	}
 }
 

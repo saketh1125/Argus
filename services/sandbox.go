@@ -4,134 +4,34 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
 
 // ---------------------------------------------------------------------------
-// Working adapter: local executor
+// Unavailable adapter
 // ---------------------------------------------------------------------------
 
-// localSandbox runs a one-shot spec on the host inside a throwaway temp dir. It
-// is the working Sandbox in the absence of an E2B key: it writes the spec files,
-// runs each command in order under a timeout, and reports combined output. It is
-// marked Live()=false because it is not the isolated production sandbox.
-//
-// Real syntax checks (py_compile, node --check, go build) execute here. If an
-// interpreter is missing on the host, the offending command is SKIPPED and noted
-// in Logs rather than failing the run.
-type localSandbox struct{}
-
-// newLocalSandbox returns the local executor adapter.
-func newLocalSandbox() *localSandbox { return &localSandbox{} }
-
-// Run materializes spec.Files in a temp directory, runs spec.Commands in order
-// under a spec.TimeoutSec-second deadline, and returns the combined result.
-// Success is true only when every configured validation command runs and exits
-// 0. Missing tools fail closed. The temp directory is always removed.
-func (l *localSandbox) Run(ctx context.Context, spec SandboxSpec) (*SandboxResult, error) {
-	tmp, err := os.MkdirTemp("", "codesentinel-sbx-*")
-	if err != nil {
-		return nil, fmt.Errorf("local-sandbox: temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmp)
-
-	// Write files, creating parent directories as needed.
-	for rel, content := range spec.Files {
-		if !filepath.IsLocal(rel) || rel == "." {
-			return nil, fmt.Errorf("local-sandbox: refusing non-local file path %q", rel)
-		}
-		dst := filepath.Join(tmp, filepath.Clean(rel))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return nil, fmt.Errorf("local-sandbox: mkdir for %s: %w", rel, err)
-		}
-		if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
-			return nil, fmt.Errorf("local-sandbox: write %s: %w", rel, err)
-		}
-	}
-
-	timeout := time.Duration(spec.TimeoutSec) * time.Second
-	if spec.TimeoutSec <= 0 {
-		timeout = 60 * time.Second
-	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	res := &SandboxResult{Success: true, ExitCode: 0}
-	var stdout, stderr, logs bytes.Buffer
-
-	for _, cmdline := range spec.Commands {
-		fields := strings.Fields(cmdline)
-		if len(fields) == 0 {
-			continue
-		}
-		// A missing validator cannot count as a successful validation.
-		if _, lookErr := exec.LookPath(fields[0]); lookErr != nil {
-			res.Success = false
-			res.ExitCode = 127
-			fmt.Fprintf(&logs, "FAILED (validator %s not found): %s\n", fields[0], cmdline)
-			res.Logs = logs.String()
-			return res, nil
-		}
-
-		// Execute through the platform shell so generated, safely quoted
-		// syntax-check commands work on both Linux containers and native Windows.
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			shell, shellErr := exec.LookPath("powershell.exe")
-			if shellErr != nil {
-				res.Success = false
-				res.ExitCode = 127
-				fmt.Fprintf(&logs, "FAILED (PowerShell not found): %s\n", cmdline)
-				res.Logs = logs.String()
-				return res, nil
-			}
-			cmd = exec.CommandContext(runCtx, shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", cmdline)
-		} else {
-			cmd = exec.CommandContext(runCtx, "sh", "-c", cmdline)
-		}
-		cmd.Dir = tmp
-		var cout, cerr bytes.Buffer
-		cmd.Stdout = &cout
-		cmd.Stderr = &cerr
-		runErr := cmd.Run()
-
-		stdout.WriteString(cout.String())
-		stderr.WriteString(cerr.String())
-		fmt.Fprintf(&logs, "RUN: %s\n", cmdline)
-
-		if runErr != nil {
-			res.Success = false
-			if ee := (&exec.ExitError{}); errors.As(runErr, &ee) {
-				res.ExitCode = ee.ExitCode()
-			} else {
-				res.ExitCode = 1
-			}
-			fmt.Fprintf(&logs, "FAILED (exit %d): %v\n", res.ExitCode, runErr)
-			break // first failure stops the chain
-		}
-		fmt.Fprintf(&logs, "OK: %s\n", cmdline)
-	}
-
-	res.Stdout = stdout.String()
-	res.Stderr = stderr.String()
-	res.Logs = logs.String()
-	return res, nil
+// unavailableSandbox refuses validation when no isolated provider is configured.
+// It never materializes files or executes repository supplied code on the host.
+type unavailableSandbox struct {
+	reason string
 }
 
-// Name identifies the adapter.
-func (l *localSandbox) Name() string { return "local-sandbox" }
+func newUnavailableSandbox(reason string) *unavailableSandbox {
+	return &unavailableSandbox{reason: reason}
+}
 
-// Live reports that this is NOT the isolated production sandbox.
-func (l *localSandbox) Live() bool { return false }
+func (u *unavailableSandbox) Run(context.Context, SandboxSpec) (*SandboxResult, error) {
+	return nil, fmt.Errorf("validation unavailable: %s", u.reason)
+}
+
+func (u *unavailableSandbox) Name() string { return "unavailable" }
+
+func (u *unavailableSandbox) Live() bool { return false }
 
 // ---------------------------------------------------------------------------
 // Real adapter: E2B (selected only when a key is present)

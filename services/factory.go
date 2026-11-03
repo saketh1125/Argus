@@ -81,10 +81,15 @@ func selectVectors(ctx context.Context, cfg *config.Config) VectorStore {
 	return newMockVectors()
 }
 
-// selectSandbox picks E2B only when a key is present, else the local executor.
+// selectSandbox picks E2B only when configured and not in mock mode. Validation
+// is unavailable without an isolated provider; repository code never runs on the
+// host as a fallback.
 func selectSandbox(cfg *config.Config) Sandbox {
-	if cfg.ForceMock || cfg.E2BAPIKey == "" {
-		return newLocalSandbox()
+	if cfg.ForceMock {
+		return newUnavailableSandbox("mock mode does not execute repository code")
+	}
+	if cfg.E2BAPIKey == "" {
+		return newUnavailableSandbox("configure E2B_API_KEY to enable isolated validation")
 	}
 	return newE2BSandbox(cfg.E2BAPIKey)
 }
