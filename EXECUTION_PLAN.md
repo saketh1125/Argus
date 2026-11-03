@@ -918,7 +918,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; commits `0c57dc7`, `996d521` pushed to PR #2. Local `go test ./...`, `go vet ./...`, and `go build ./...` pass. GitHub Actions run [#27](https://github.com/saketh1125/Argus/actions/runs/41651669380) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build. Mock run reports unavailable validation and demotes two fixes. | E2B integration and remaining adversarial checks are unverified. |
+| P0 — Baseline and safety | IN PROGRESS | Baseline `0089d0779c00f53c4f45acfd2437e093a2cbd484`; current remote before this audit `6e7dc0033438d12c03eed016640f3e69278ecf3d`. Local full tests, vet, targeted regressions, and mock run pass. CI run [#29](https://github.com/saketh1125/Argus/actions/runs/41652050754) passed on prior head `6e7dc00`; follow-up CI for this audit is pending push. | Genuine E2B execution remains blocked/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -927,15 +927,40 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | P6 — Deployment | NOT STARTED | — | Security, operations and deployed workflow |
 | P7 — Evaluation/release | NOT STARTED | — | Benchmark and measured quality |
 
+### Phase 0 verification checkpoint — 2026-11-03
+
+| Requirement | Status | Evidence / limitation |
+|---|---|---|
+| Exact baseline and environment recorded | VERIFIED | Baseline and current remote head recorded above; Go 1.27.3, Windows/AMD64, `CGO_ENABLED=0`. |
+| Existing test/build outcomes documented accurately | VERIFIED | Full `go test ./...`, `go vet ./...`, and mock run observed. Native `go build ./...` exited 0 with a module stat-cache access warning. Local race test cannot start because CGO is disabled. |
+| No arbitrary LLM-supplied command executes on host | VERIFIED | Validator uses deterministic commands and no host command runner; earlier CI and tests cover this boundary. |
+| No untrusted repository code executes outside genuine isolation | VERIFIED (fail closed) | Sandbox adapter removed; with or without E2B credentials it reports unavailable and refuses commands. No live sandbox execution is claimed. |
+| Missing sandbox reports validation unavailable | VERIFIED | Factory/unavailable-sandbox regression tests; mock demo banner says `sandbox=unavailable` and demotes unvalidated fixes. |
+| Validator cannot accept a function-only rewrite as a full file | VERIFIED | Existing complete-file/provenance regression tests pass in `go test ./agents`. |
+| PR agent rejects absent, empty, stale, incomplete or mutated full-file provenance | VERIFIED | Existing provenance, conflict and base SHA tests pass; live PR entry point now refuses before any write until exact approval and fork publication exist. |
+| Regression tests preserve source/siblings and reject stale source | VERIFIED | Validator and GitHub patch safety tests pass. |
+| GitHub write retry/partial-failure handling is bounded | VERIFIED | Write requests make a single attempt and surface uncertain outcomes; response size and client time are bounded. Focused mocked HTTP tests pass. |
+| Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
+| CI required checks pass on this audit's code | PARTIALLY VERIFIED | Prior head `6e7dc00` passed run #29. New code awaits pushed-commit CI. |
+| Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | No `E2B_API_KEY`; old unverified adapter was removed from selection and implementation. Credential presence alone will not re-enable it. |
+| Exact-patch human approval and fork-based contribution publication | BLOCKED | Not implemented. Live writes now fail closed; no credentials or live publication tests were used. |
+
+### Credential and verification inventory
+
+`.env` is absent and all checked integration credentials are unset. No values were read or logged.
+
+| Integration | Environment variables | Credential-free / mock verification | Live verification |
+|---|---|---|---|
+| GitHub | `GITHUB_TOKEN`, `GITHUB_ALLOWED_REPOS`, `ENABLE_LIVE_AUTOPR` | Unit tests, mocked GitHub client, offline demo. Live writes are refused by `PRAgent`. | Would require a GitHub token and exact repo authorization; intentionally not run. |
+| NVIDIA NIM | `NIM_API_KEY`, optional `NIM_BASE_URL`, `NIM_MODEL` | Mock model and unit tests. Live test additionally requires `ARGUS_RUN_LIVE_NIM_TESTS=true`. | Requires NIM key and explicit test opt-in; not run. |
+| Embeddings | `JINA_API_KEY`, `GEMINI_API_KEY`; optional local `OLLAMA_HOST`, `EMBED_MODEL` | Deterministic mock/hash embeddings; local Ollama probe is optional. | Provider key or locally running Ollama; not required for safety tests. |
+| Qdrant | `QDRANT_HOST`, `QDRANT_PORT` | In-memory mock vector store. | Local or remote Qdrant endpoint; no credential configured or needed by unit tests. |
+| E2B | `E2B_API_KEY` | Unavailable-provider tests prove fail-closed behavior with missing and present test credentials. | Would require E2B API key and verified current provider contract; deliberately not attempted. |
+| Runtime controls | `MAX_RPM`, `MAX_FILES`, `ANALYST_PARALLEL`, `FIX_CANDIDATES`, `CONFIDENCE_GATE`, `LOCALIZE_FALLBACK`, `SANDBOX_TIMEOUT`, `DASHBOARD_PORT`, `FORCE_MOCK`, `NO_DASHBOARD` | Defaults and mock tests. | No credentials required. |
+
 ### Current next action
 
-Continue **P0 — Baseline and critical safety fixes**. Do not start Phase 1 until every P0 acceptance criterion has evidence.
-
-1. Verify the isolated provider API, cleanup guarantees and resource limits; do not count E2B as safe until its current integration is exercised and observed.
-2. Add/execute adversarial tests for no host execution, generated-command rejection, persistence failures and interrupted/failed validation.
-3. Confirm patch provenance and complete-file rejection tests cover stale and unauthorized changes.
-4. Review the completed GitHub Actions run and keep its result linked to the checkpoint.
-5. Reassess every P0 acceptance criterion and stop at the P0 exit gate.
+Push this reviewed checkpoint (user approved), verify CI on the new head, then keep P0 open until E2B can be safely exercised and exact-patch human approval/fork publication are implemented or explicitly removed from Phase 0 scope by the project owner.
 
 ---
 

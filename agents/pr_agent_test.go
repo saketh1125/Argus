@@ -21,6 +21,7 @@ type captureGitHub struct {
 	issues    int
 	branches  int
 	commitErr error
+	live      bool
 }
 
 func (c *captureGitHub) ParseURL(string) (string, string, error) { return "o", "r", nil }
@@ -47,9 +48,21 @@ func (c *captureGitHub) CreateIssue(context.Context, string, string, string, str
 	return c.issues, "https://github.com/o/r/issues", nil
 }
 func (c *captureGitHub) Name() string { return "capture" }
-func (c *captureGitHub) Live() bool   { return false }
+func (c *captureGitHub) Live() bool   { return c.live }
 
 var _ tools.GitHubClient = (*captureGitHub)(nil)
+
+func TestPRAgentRefusesLivePublicationWithoutExactApproval(t *testing.T) {
+	gh := &captureGitHub{live: true}
+	pr := NewPRAgent(gh, testConfig(), models.NoopReporter{}, nil, nil)
+	_, err := pr.Run(context.Background(), "o", "r", "main", []*models.Issue{validPRIssue()}, nil)
+	if err == nil || !strings.Contains(err.Error(), "exact-patch human approval") {
+		t.Fatalf("expected live publication to fail closed, got %v", err)
+	}
+	if gh.branches != 0 || len(gh.commits) != 0 || len(gh.prSpecs) != 0 || gh.issues != 0 {
+		t.Fatalf("live refusal must precede every write: branches=%d commits=%d PRs=%d issues=%d", gh.branches, len(gh.commits), len(gh.prSpecs), gh.issues)
+	}
+}
 
 // TestPRAgentCommitsFullPatchedFile is the regression test for the destructive
 // overwrite bug: when the validator captured a full patched file, the PR agent

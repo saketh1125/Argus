@@ -1,5 +1,37 @@
 # Sprint Report — Phase 0 Safety Checkpoint
 
+## Follow-up audit — 2026-11-03
+
+Base: `6e7dc0033438d12c03eed016640f3e69278ecf3d` (`Record successful Argus CI checkpoint`); PR #2 open, draft and unmerged. This follow-up is being prepared for the same branch; its commit and CI result will be recorded after push.
+
+### High-risk findings and resolutions
+
+- **E2B adapter contract and execution result were unverified.** The previous code selected it solely from `E2B_API_KEY`, used unverified REST routes, and could accept an empty process response as exit code zero. Removed the adapter implementation and made the factory return `unavailable` even when an E2B key is supplied. This prevents both false validation and repository execution through an unverified provider. E2B live isolation remains **BLOCKED**, not verified.
+- **Live GitHub publication lacked exact-patch approval and fork publication.** `PRAgent.Run` now refuses a live GitHub client before any write. A regression test confirms no branch, commit, PR or issue side effect. Publication remains **BLOCKED** pending those capabilities.
+- **GitHub REST retried writes after 5xx and had no client/body bounds.** Writes now make one attempt and label server/network failures as outcome-uncertain for reconciliation; only read-only calls retry. The client has a 30-second timeout and responses are capped at 8 MiB. Focused tests verify no write retry and oversized-response rejection.
+- **Live NIM test printed the API key.** Removed key logging and require `ARGUS_RUN_LIVE_NIM_TESTS=true` before the live test can run. The test is not run by default.
+
+### Credential inventory and verification classes
+
+The Windows checkout has no `.env`; presence checks showed all integration credentials unset. No secret values were read or printed. Credential-free verification includes unit tests, mock GitHub/model behavior, unavailable-sandbox behavior, and the offline sample workflow. Live NIM requires `NIM_API_KEY` plus the explicit test opt-in. Live GitHub requires `GITHUB_TOKEN`, `GITHUB_ALLOWED_REPOS`, and explicit publication authorization, but writes are currently rejected. E2B requires `E2B_API_KEY`; its implementation is disabled pending API, isolation and lifecycle verification. Optional Jina/Gemini keys or local Ollama, and Qdrant endpoint settings affect embeddings/vectors, not safety tests.
+
+### Verification
+
+- `go test ./services ./agents` — PASS after implementation.
+- `go test ./tools -run 'TestGitHub(WriteFailureIsNotRetriedAndMarkedUncertain|ResponseSizeIsBounded)$' -count=1` — PASS.
+- `go test ./tools -run 'TestGitHub(WriteFailureIsNotRetriedAndMarkedUncertain|ResponseSizeIsBounded|SuccessfulWriteWithMalformedResponseIsUncertain)$' -count=1` — PASS after the final partial-response regression was added.
+- `go test ./...` — PASS.
+- `go vet ./...` — PASS.
+- `go build ./...` — exit 0; Go printed a restricted module stat-cache access warning.
+- `go test -race ./...` — BLOCKED locally: `CGO_ENABLED=0`; Go requires CGO. Prior GitHub Actions run #29 passed race tests on the previous head; new code awaits CI.
+- `FORCE_MOCK=true go run . --repo ./testdata/sample-repo --no-dashboard` — PASS. Banner identified all mocks and `sandbox=unavailable`; 3 candidates, 0 PRs, 2 demoted. The summary URL is an in-memory mock artifact.
+- `git diff --check` — PASS (line-ending conversion warnings only).
+- Live E2B, GitHub publication and NIM checks — NOT RUN; credentials are absent, and publication/sandbox live paths remain disabled.
+
+### Status
+
+P0 remains **IN PROGRESS**. Fail-closed behavior, patch provenance, and no-side-effect live publication refusal are verified. Real E2B execution and exact-patch approval/fork publishing remain blockers. CI for the follow-up commit is pending.
+
 Date: 2026-11-03
 Branch: `codex/pr-patch-safety`
 Baseline commit: `0089d0779c00f53c4f45acfd2437e093a2cbd484`

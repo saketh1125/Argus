@@ -232,3 +232,48 @@ func TestGitHubCreatePRRejectsMovedBase(t *testing.T) {
 		t.Fatal("must not create a PR after the base moves")
 	}
 }
+
+func TestGitHubWriteFailureIsNotRetriedAndMarkedUncertain(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("temporary failure"))
+	}))
+	defer server.Close()
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	err := client.do(context.Background(), http.MethodPost, server.URL+"/writes", map[string]string{"x": "y"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "write outcome may be uncertain") {
+		t.Fatalf("expected an uncertain write failure, got %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("write request retried %d times; want one attempt", requests)
+	}
+}
+
+func TestGitHubResponseSizeIsBounded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", maxGitHubResponseBytes+1)))
+	}))
+	defer server.Close()
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	var out map[string]any
+	err := client.do(context.Background(), http.MethodGet, server.URL+"/large", nil, &out)
+	if err == nil || !strings.Contains(err.Error(), "response exceeds") {
+		t.Fatalf("expected oversized response rejection, got %v", err)
+	}
+}
+
+func TestGitHubSuccessfulWriteWithMalformedResponseIsUncertain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("not-json"))
+	}))
+	defer server.Close()
+	client := &githubREST{token: "test", http: server.Client(), baseURL: server.URL}
+	var out map[string]any
+	err := client.do(context.Background(), http.MethodPost, server.URL+"/writes", map[string]string{"x": "y"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "write outcome may be uncertain") {
+		t.Fatalf("expected successful-but-unparseable write to be marked uncertain, got %v", err)
+	}
+}

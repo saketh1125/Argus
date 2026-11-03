@@ -11,15 +11,17 @@ import (
 	"github.com/saketh1125/argus/config"
 )
 
-// TestNIMLiveConnect performs a real NIM API call and prints the full response
-// for debugging. Run with: go test -v -run TestNIMLiveConnect ./services/
+// TestNIMLiveConnect performs a real NIM API call only after explicit opt-in.
+// Set ARGUS_RUN_LIVE_NIM_TESTS=true and NIM_API_KEY to enable it.
 func TestNIMLiveConnect(t *testing.T) {
+	if os.Getenv("ARGUS_RUN_LIVE_NIM_TESTS") != "true" {
+		t.Skip("live NIM test requires ARGUS_RUN_LIVE_NIM_TESTS=true")
+	}
 	cwd, _ := os.Getwd()
 	t.Logf("CWD: %s", cwd)
 
 	cfg := config.Load()
 
-	t.Logf("NIM_API_KEY=%q (len=%d)", cfg.NIMAPIKey, len(cfg.NIMAPIKey))
 	t.Logf("NIMBaseURL=%q", cfg.NIMBaseURL)
 	t.Logf("NIMModel=%q", cfg.NIMModel)
 	t.Logf("ForceMock=%v", cfg.ForceMock)

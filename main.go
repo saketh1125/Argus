@@ -198,7 +198,7 @@ func run() error {
 
 func requireIsolatedValidationBeforeLivePR(githubLive, sandboxLive bool) error {
 	if githubLive && !sandboxLive {
-		return fmt.Errorf("refusing live GitHub PR integration without an isolated sandbox; configure E2B_API_KEY or use mock GitHub")
+		return fmt.Errorf("refusing live GitHub integration because isolated validation is unavailable")
 	}
 	return nil
 }

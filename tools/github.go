@@ -27,6 +27,8 @@ import (
 // apiBase is the GitHub REST API root.
 const apiBase = "https://api.github.com"
 
+const maxGitHubResponseBytes = 8 << 20
+
 // sampleRepoPath is the deterministic buggy source the mock clones when no real
 // local directory is provided.
 const sampleRepoPath = "testdata/sample-repo"
@@ -133,7 +135,7 @@ type githubREST struct {
 
 // newGitHubREST builds a real client bound to the given token.
 func newGitHubREST(token string) *githubREST {
-	return &githubREST{token: token, http: &http.Client{}}
+	return &githubREST{token: token, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (g *githubREST) apiRoot() string {
@@ -183,17 +185,20 @@ func (g *githubREST) do(ctx context.Context, method, url string, body any, out a
 	}
 
 	delays := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+	readOnly := method == http.MethodGet || method == http.MethodHead
 	var lastErr error
 
 	for attempt := 0; attempt < 4; attempt++ {
-		// Sleep with context-cancellation check before each retry.
+		// Retry only safe reads. A write may have reached GitHub even when its
+		// response was lost, so automatic retries can duplicate side effects.
 		if attempt > 0 {
+			timer := time.NewTimer(delays[attempt-1])
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			default:
+			case <-timer.C:
 			}
-			time.Sleep(delays[attempt-1])
 		}
 
 		// Build the request body reader, rewound for this attempt.
@@ -214,14 +219,32 @@ func (g *githubREST) do(ctx context.Context, method, url string, body any, out a
 
 		resp, err := g.http.Do(req)
 		if err != nil {
+			if !readOnly {
+				return fmt.Errorf("request: %s %s: write outcome may be uncertain: %w", method, url, err)
+			}
 			return fmt.Errorf("request: %s %s: %w", method, url, err)
 		}
-		data, _ := io.ReadAll(resp.Body)
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes+1))
 		resp.Body.Close()
+		if readErr != nil {
+			if !readOnly {
+				return fmt.Errorf("request: read %s %s: write outcome may be uncertain: %w", method, url, readErr)
+			}
+			return fmt.Errorf("request: read %s %s: %w", method, url, readErr)
+		}
+		if len(data) > maxGitHubResponseBytes {
+			if !readOnly {
+				return fmt.Errorf("request: %s %s: response exceeds %d-byte limit; write outcome may be uncertain", method, url, maxGitHubResponseBytes)
+			}
+			return fmt.Errorf("request: %s %s: response exceeds %d-byte limit", method, url, maxGitHubResponseBytes)
+		}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			if out != nil && len(data) > 0 {
 				if err := json.Unmarshal(data, out); err != nil {
+					if !readOnly {
+						return fmt.Errorf("request: decode %s %s: write outcome may be uncertain: %w", method, url, err)
+					}
 					return fmt.Errorf("request: decode %s %s: %w", method, url, err)
 				}
 			}
@@ -237,6 +260,9 @@ func (g *githubREST) do(ctx context.Context, method, url string, body any, out a
 		case http.StatusInternalServerError, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout: // 500/502/503/504
 			lastErr = fmt.Errorf("request: %s %s: status %d: %s", method, url, resp.StatusCode, strings.TrimSpace(string(data)))
+			if !readOnly {
+				return fmt.Errorf("%w; write outcome may be uncertain and must be reconciled before retry", lastErr)
+			}
 			// Retry if we have attempts remaining.
 			if attempt < 3 {
 				continue

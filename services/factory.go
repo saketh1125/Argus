@@ -81,17 +81,17 @@ func selectVectors(ctx context.Context, cfg *config.Config) VectorStore {
 	return newMockVectors()
 }
 
-// selectSandbox picks E2B only when configured and not in mock mode. Validation
-// is unavailable without an isolated provider; repository code never runs on the
-// host as a fallback.
+// selectSandbox refuses validation until the provider API, resource limits,
+// isolation settings, and cleanup behaviour have been verified. An API key by
+// itself is not evidence that the adapter is safe to use.
 func selectSandbox(cfg *config.Config) Sandbox {
 	if cfg.ForceMock {
 		return newUnavailableSandbox("mock mode does not execute repository code")
 	}
-	if cfg.E2BAPIKey == "" {
-		return newUnavailableSandbox("configure E2B_API_KEY to enable isolated validation")
+	if cfg.E2BAPIKey != "" {
+		return newUnavailableSandbox("E2B adapter is disabled pending API and live isolation verification")
 	}
-	return newE2BSandbox(cfg.E2BAPIKey)
+	return newUnavailableSandbox("E2B_API_KEY is not configured; isolated validation is unavailable")
 }
 
 // computeMode reduces the per-adapter Live() flags to a single Mode string:

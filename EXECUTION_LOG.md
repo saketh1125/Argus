@@ -2,6 +2,24 @@
 
 Append-only checkpoint log. Record verified work and blockers; do not rewrite prior entries.
 
+## 2026-11-03 — Fail-closed provider and publication audit
+
+- Starting checkout was clean on `codex/pr-patch-safety` at `6e7dc0033438d12c03eed016640f3e69278ecf3d`; PR #2 was open, draft, unmerged, with the same head.
+- GitHub Actions run [#29](https://github.com/saketh1125/Argus/actions/runs/41652050754) passed on that starting head: formatting, `go test ./...`, vet, race tests, native build and Windows AMD64 build.
+- `.env` is absent; a presence-only inventory found `GITHUB_TOKEN`, `GITHUB_ALLOWED_REPOS`, `NIM_API_KEY`, `JINA_API_KEY`, `GEMINI_API_KEY`, `E2B_API_KEY` unset. No secret values were read or emitted. Optional endpoint/tuning variables were also unset.
+- Removed the unverified E2B REST adapter. E2B credentials, if later provided, cannot enable validation until a reviewed implementation exists. Missing or configured-but-disabled E2B returns an unavailable sandbox and refuses commands.
+- Added regression coverage for E2B key not enabling an unverified adapter and missing provider credentials selecting identifiable mock GitHub/model services with unavailable validation.
+- Live GitHub publication now refuses before side effects because exact-patch approval and fork-based publication are not implemented. A test confirms no branch, commit, PR or issue write is reached.
+- GitHub REST writes no longer retry on 5xx; ambiguous write failures are marked outcome-uncertain. Added a 30-second client timeout, an 8 MiB response cap, and tests for uncertain non-retried writes and oversized responses.
+- Removed NIM API-key logging from the live integration test; it now requires `ARGUS_RUN_LIVE_NIM_TESTS=true` explicitly and is not part of default live verification.
+- Targeted `go test ./services ./agents .` — PASS; full `go test ./...` — PASS; `go vet ./...` — PASS.
+- Focused GitHub retry/response-bound tests — PASS.
+- `go build ./...` — exit 0, with a Go module stat-cache access warning under the restricted environment.
+- Local `go test -race ./...` — BLOCKED because `CGO_ENABLED=0`; prior CI race run #29 passed only on the pre-audit head.
+- Offline mock sample workflow — PASS: mode and selected adapters explicitly labelled mock; sandbox unavailable; 3 candidates, 0 PRs, 2 demoted. No live provider or publication credentials were used.
+- `git diff --check` — PASS; Git emitted expected Windows line-ending conversion warnings.
+- P0 remains in progress. E2B live API/isolation/lifecycle and exact-patch approval/fork publication remain blocked; follow-up CI must run after push.
+
 ## 2026-11-03 — Phase 0 baseline and host-execution safety
 
 - Checkout began clean on `codex/pr-patch-safety` at `0089d0779c00f53c4f45acfd2437e093a2cbd484`; remote is `origin` at `https://github.com/saketh1125/Argus.git`.

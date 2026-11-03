@@ -42,15 +42,7 @@ func NewPRAgent(gh tools.GitHubClient, cfg *config.Config, rep models.Reporter, 
 // (validator demotes in place); those are routed to the summary, not to PRs.
 func (p *PRAgent) Run(ctx context.Context, owner, repo, base string, validated []*models.Issue, summary []*models.Issue) (*models.RunReport, error) {
 	if p.gh.Live() {
-		if p.cfg == nil || !p.cfg.EnableLiveAutoPR {
-			return nil, fmt.Errorf("refusing live GitHub writes while live autonomous PR generation is disabled")
-		}
-		if !p.cfg.AllowsGitHubRepo(owner, repo) {
-			return nil, fmt.Errorf("refusing live writes to non-allowlisted repository %s/%s", owner, repo)
-		}
-		if p.idx == nil || p.idx.SnapshotCommitSHA == "" {
-			return nil, fmt.Errorf("refusing live GitHub writes without the analyzed base commit SHA")
-		}
+		return nil, fmt.Errorf("refusing live GitHub writes: exact-patch human approval and fork publication are not implemented")
 	}
 	p.rep.SetStage(models.StagePR, 0)
 	if base == "" {
