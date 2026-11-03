@@ -34,6 +34,11 @@ type Preprocessor struct {
 	rep    models.Reporter
 }
 
+type sourceCandidate struct {
+	abs, rel string
+	mod      int64
+}
+
 // NewPreprocessor wires the preprocessor with its GitHub, parser, embedding, and
 // vector-store dependencies.
 func NewPreprocessor(gh tools.GitHubClient, parser tools.CodeParser, embed services.EmbeddingClient, vstore services.VectorStore, cfg *config.Config, rep models.Reporter) *Preprocessor {
@@ -76,38 +81,10 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	}
 	p.rep.SetStage(models.StageIngest, 20)
 
-	// Walk the tree and collect supported files with their mod times.
-	type cand struct {
-		abs, rel string
-		mod      int64
-	}
-	var cands []cand
-	_ = filepath.WalkDir(workdir, func(path string, d os.DirEntry, werr error) error {
-		if werr != nil {
-			return nil // skip unreadable entries, keep walking
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if path != workdir && (name == ".git" || name == "node_modules" || name == "vendor" || name == ".venv") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		ext := filepath.Ext(path)
-		if !p.parser.Supports(ext) {
-			return nil
-		}
-		info, ierr := d.Info()
-		if ierr != nil {
-			return nil
-		}
-		rel, rerr := filepath.Rel(workdir, path)
-		if rerr != nil {
-			rel = path
-		}
-		cands = append(cands, cand{abs: path, rel: rel, mod: info.ModTime().UnixNano()})
-		return nil
-	})
+	// Walk the tree and collect supported regular files with their mod times.
+	// Git checkouts can contain symlinks, so reject them before the later ReadFile
+	// call can follow a link outside the cloned repository.
+	cands := collectSourceCandidates(workdir, p.parser)
 
 	// Sort by modification time descending, take the top MaxFiles.
 	sort.Slice(cands, func(i, j int) bool { return cands[i].mod > cands[j].mod })
@@ -145,6 +122,40 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	p.rep.SetStage(models.StageIngest, 100)
 	p.rep.Log("preprocessor: indexed %d files, %d signatures", idx.FileCount(), len(idx.Signatures()))
 	return idx, workdir, owner, repo, nil
+}
+
+func collectSourceCandidates(workdir string, parser tools.CodeParser) []sourceCandidate {
+	var cands []sourceCandidate
+	_ = filepath.WalkDir(workdir, func(path string, d os.DirEntry, werr error) error {
+		if werr != nil {
+			return nil // skip unreadable entries, keep walking
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if path != workdir && (name == ".git" || name == "node_modules" || name == "vendor" || name == ".venv") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := filepath.Ext(path)
+		if !parser.Supports(ext) {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(workdir, path)
+		if rerr != nil {
+			rel = path
+		}
+		cands = append(cands, sourceCandidate{abs: path, rel: rel, mod: info.ModTime().UnixNano()})
+		return nil
+	})
+	return cands
 }
 
 // embedSignatures embeds every signature's "{file} {name} {signature}" text into

@@ -157,3 +157,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Focused launcher tests and `go test ./... -count=1`, `go vet ./...`, `go build ./...`, and offline mock sample also passed locally. The local race command remains unavailable because `CGO_ENABLED=0`.
 - Presence-only environment inventory confirmed `.env` is absent and integration variables are unset; secret values were not read. Credential-free, mock-based and live-only requirements are classified in `EXECUTION_PLAN.md`.
 - No live provider, E2B, credential, GitHub publication or PR creation was exercised. Phase 0 remains IN PROGRESS; E2B isolation and exact-patch approval/fork publication remain blockers.
+
+## 2026-11-03 — Repository symlink preprocessing boundary
+
+- Found a High host-data exposure risk: live Git checkouts can contain symlink entries, and preprocessing later read selected paths with `os.ReadFile` without rejecting symlinks. A repository link could point outside the checkout and expose the target contents to parsing/embedding providers.
+- Candidate discovery now ignores symlink entries and non-regular files before the later reads. Added `TestCollectSourceCandidatesSkipsSymlinkTargetsOutsideCheckout`.
+- Focused regression and package/full Go tests passed, but Windows skipped symlink creation because the host lacks the required privilege. `go vet ./...` passed; `go build ./...` exited 0 with the restricted module stat-cache warning. Linux CI is required for execution evidence and is pending.
+- Starting pushed head was `37022ff`; CI run #63 passed on that prior head. No live credentials/provider calls were used. This fix is local and uncommitted at this log entry.

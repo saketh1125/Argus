@@ -77,6 +77,23 @@ P0 remains **IN PROGRESS**. The Windows-to-Linux command-generation defect is fi
 
 Current estimate: **87%** by equal-weight checklist scoring: 16 of 19 rows VERIFIED, 1 PARTIALLY VERIFIED (counted as one half), and 2 BLOCKED. The launcher change passed CI #61. E2B remains unavailable; exact-patch approval and fork-based publication remain incomplete. Phase 0 exit gate is not met.
 
+## Continued audit — 2026-11-03 (repository symlink read boundary)
+
+### High-priority finding and resolution
+
+- **High — preprocessing could read through symlinks in a live Git checkout.** Local copy mode rejected symlinks, but live `git clone` can materialize repository symlinks. Candidate discovery selected supported extensions and later called `os.ReadFile`, which follows a symlink and could read a host file outside the checkout into the parsing and embedding pipeline.
+- Candidate discovery now ignores symlink entries and accepts only regular files before adding them to the read list. Added a regression with a supported `.go` symlink targeting a file outside the checkout.
+
+### Verification
+
+- Focused regression command — PASS, but the test was **SKIPPED** on this Windows host because creating symlinks requires a privilege unavailable here. The Linux CI job must execute the test before the finding is marked VERIFIED.
+- `go test ./agents -count=1` and `go test ./... -count=1` — PASS; `go vet ./...` — PASS; `go build ./...` — exit 0 with the restricted module stat-cache warning.
+- CI run #63 passed on the pushed documentation head `37022ff`; it predates this local code change. CI for the symlink fix is pending. No live credentials or provider calls were used.
+
+### Current estimate and status
+
+Current working-copy estimate: **84%** by equal-weight checklist scoring: 15 of 19 rows VERIFIED, 2 PARTIALLY VERIFIED (each counts as one half), and 2 BLOCKED. The host clone/preprocessing row and current-code CI row are partial until Linux CI runs this test. E2B execution and exact-patch approval/fork publication remain blocked; Phase 0 is still in progress.
+
 ## Continued audit — 2026-11-03
 
 ### Additional findings addressed
