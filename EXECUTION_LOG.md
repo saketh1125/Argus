@@ -239,3 +239,10 @@ Append-only checkpoint log. Record verified work and blockers; do not rewrite pr
 - Split the hard clone transfer/disk quota into a separate BLOCKED acceptance row. The earlier 23-row estimate mentioned this gap but did not count it, so its 89% figure overstated coverage.
 - Corrected estimate is **85%** across 24 equal-weight rows: 20 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 3 BLOCKED; `(20 + 0.5) / 24 = 85.4%`.
 - This is a documentation correction only. The implementation checkpoint remains `bebaa31` (CI #80 passed), and the latest documentation checkpoint `e284e24` passed CI #84. No implementation or CI evidence was removed.
+
+## 2026-11-03 — Bound local directory-copy fallback
+
+- Added a 256 MiB aggregate file-byte limit and a 100,000-entry limit to local directory copies. Each file is revalidated against its inspected identity and streamed within the remaining aggregate byte budget, including a one-byte overflow probe that is not written to disk.
+- Focused byte/entry regressions and full `go test ./... -count=1` pass. `go vet ./...`, gofmt and `git diff --check` pass; `go build ./...` exits 0 with the module-cache access warning.
+- The remote Git HTTPS transfer itself remains unbounded; local copy caps do not resolve that blocker. This source change is local and awaits CI; last pushed checkpoint `12f3e27` passed CI #86.
+- Interim checklist estimate is 82% across 25 rows: 19 VERIFIED, 3 PARTIALLY VERIFIED at half credit, and 3 BLOCKED. No live credentials or services were used.

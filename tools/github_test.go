@@ -58,6 +58,34 @@ func TestCopyDirRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestCopyDirEnforcesAggregateByteAndEntryBudgets(t *testing.T) {
+	t.Run("bytes", func(t *testing.T) {
+		source := t.TempDir()
+		if err := os.WriteFile(filepath.Join(source, "file.txt"), []byte("12345"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		dest := filepath.Join(t.TempDir(), "copy")
+		if err := copyDirWithBudget(source, dest, 4, 10); err == nil || !strings.Contains(err.Error(), "byte") {
+			t.Fatalf("copyDirWithBudget error = %v, want byte-budget error", err)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "file.txt")); !os.IsNotExist(err) {
+			t.Fatalf("oversized file was copied: stat error = %v", err)
+		}
+	})
+
+	t.Run("entries", func(t *testing.T) {
+		source := t.TempDir()
+		for _, name := range []string{"a.txt", "b.txt"} {
+			if err := os.WriteFile(filepath.Join(source, name), []byte(name), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := copyDirWithBudget(source, filepath.Join(t.TempDir(), "copy"), 100, 1); err == nil || !strings.Contains(err.Error(), "entry count") {
+			t.Fatalf("copyDirWithBudget error = %v, want entry-count error", err)
+		}
+	})
+}
+
 func TestGitHubCloneRejectsRemoteHelperURLs(t *testing.T) {
 	client := newGitHubREST("test-token")
 	if _, err := client.Clone(context.Background(), "ext::sh -c 'touch marker'", filepath.Join(t.TempDir(), "checkout")); err == nil || !strings.Contains(err.Error(), "refusing non-GitHub remote") {

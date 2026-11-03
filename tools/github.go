@@ -29,6 +29,8 @@ const apiBase = "https://api.github.com"
 
 const maxGitHubResponseBytes = 8 << 20
 const maxGitCloneStderrBytes = 64 << 10
+const maxLocalCopyBytes int64 = 256 << 20
+const maxLocalCopyEntries = 100_000
 
 // sampleRepoPath is the deterministic buggy source the mock clones when no real
 // local directory is provided.
@@ -68,6 +70,13 @@ func parseGitHubURL(rawURL string) (owner, repo string, err error) {
 // rejects symlinks and special files so local repository copies cannot read
 // content outside the selected tree.
 func copyDir(src, dst string) error {
+	return copyDirWithBudget(src, dst, maxLocalCopyBytes, maxLocalCopyEntries)
+}
+
+func copyDirWithBudget(src, dst string, maxBytes int64, maxEntries int) error {
+	if maxBytes < 0 || maxEntries < 0 {
+		return fmt.Errorf("copy dir: invalid copy budget")
+	}
 	info, err := os.Lstat(src)
 	if err != nil {
 		return fmt.Errorf("copy dir: stat %s: %w", src, err)
@@ -78,11 +87,25 @@ func copyDir(src, dst string) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return fmt.Errorf("copy dir: mkdir %s: %w", dst, err)
 	}
+	budget := copyBudget{remainingBytes: maxBytes, remainingEntries: maxEntries}
+	return copyDirContents(src, dst, &budget)
+}
+
+type copyBudget struct {
+	remainingBytes   int64
+	remainingEntries int
+}
+
+func copyDirContents(src, dst string, budget *copyBudget) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return fmt.Errorf("copy dir: read %s: %w", src, err)
 	}
 	for _, e := range entries {
+		if budget.remainingEntries <= 0 {
+			return fmt.Errorf("copy dir: entry count exceeds configured limit")
+		}
+		budget.remainingEntries--
 		s := filepath.Join(src, e.Name())
 		d := filepath.Join(dst, e.Name())
 		info, err := os.Lstat(s)
@@ -93,7 +116,10 @@ func copyDir(src, dst string) error {
 			return fmt.Errorf("copy dir: refusing symlink %s", s)
 		}
 		if info.IsDir() {
-			if err := copyDir(s, d); err != nil {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				return fmt.Errorf("copy dir: mkdir %s: %w", d, err)
+			}
+			if err := copyDirContents(s, d, budget); err != nil {
 				return err
 			}
 			continue
@@ -101,29 +127,56 @@ func copyDir(src, dst string) error {
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("copy dir: refusing non-regular file %s", s)
 		}
-		if err := copyFile(s, d); err != nil {
+		if info.Size() > budget.remainingBytes {
+			return fmt.Errorf("copy dir: total file bytes exceed %d-byte limit", maxLocalCopyBytes)
+		}
+		copied, err := copyFileBounded(s, d, info, budget.remainingBytes)
+		if err != nil {
 			return err
 		}
+		budget.remainingBytes -= copied
 	}
 	return nil
 }
 
-// copyFile copies a single regular file from src to dst.
-func copyFile(src, dst string) error {
+// copyFileBounded copies a regular file only if it is still the same file
+// inspected by its caller, and never reads more than limit+1 bytes.
+func copyFileBounded(src, dst string, expected os.FileInfo, limit int64) (int64, error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("copy file: open %s: %w", src, err)
+		return 0, fmt.Errorf("copy file: open %s: %w", src, err)
 	}
 	defer in.Close()
+	opened, err := in.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("copy file: inspect opened %s: %w", src, err)
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(expected, opened) {
+		return 0, fmt.Errorf("copy file: %s changed or is not a regular file", src)
+	}
+	if opened.Size() > limit {
+		return 0, fmt.Errorf("copy file: %s exceeds remaining %d-byte copy budget", src, limit)
+	}
 	out, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("copy file: create %s: %w", dst, err)
+		return 0, fmt.Errorf("copy file: create %s: %w", dst, err)
 	}
 	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("copy file: %s -> %s: %w", src, dst, err)
+	copied, err := io.Copy(out, io.LimitReader(in, limit))
+	if err != nil {
+		return copied, fmt.Errorf("copy file: %s -> %s: %w", src, dst, err)
 	}
-	return nil
+	if copied == limit {
+		var extra [1]byte
+		n, readErr := in.Read(extra[:])
+		if n > 0 {
+			return copied, fmt.Errorf("copy file: %s grew beyond remaining %d-byte copy budget", src, limit)
+		}
+		if readErr != nil && readErr != io.EOF {
+			return copied, fmt.Errorf("copy file: check copy limit for %s: %w", src, readErr)
+		}
+	}
+	return copied, nil
 }
 
 // isLocalDir reports whether path names an existing local directory.

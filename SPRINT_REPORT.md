@@ -243,3 +243,10 @@ Finish Phase 0: verify the isolated provider or keep validation unavailable, com
 
 - The 23-row estimate counted per-file preprocessing bounds as verified while only mentioning the unbounded full Git transfer in its evidence. Split those requirements so the hard clone-transfer quota is an explicit **BLOCKED** acceptance row.
 - Corrected estimate: **85%** over 24 equal-weight rows: 20 VERIFIED, 1 PARTIALLY VERIFIED at half weight, and 3 BLOCKED; `(20 + 0.5) / 24 = 85.4%`. Blockers are live E2B execution, exact-patch approval/fork publication, and a hard clone transfer/disk quota. This is a more complete denominator than the prior 89% figure.
+
+## Local directory-copy resource bounds — 2026-11-03
+
+- The local-directory fallback now caps aggregate copied data at 256 MiB and directory entries at 100,000. Each file copy is bounded by remaining budget and checks identity against the previously inspected file; byte/entry regressions cover enforcement.
+- Full tests and focused copy-budget tests pass locally; `go vet ./...`, formatting and build pass. The Windows symlink test remains skipped for missing privilege. CI #86 passed before this code change; current-head CI is pending.
+- This does not cap remote Git HTTPS clone transfer/storage; that remains a separate BLOCKED acceptance row.
+- Interim estimate: **82%** over 25 equal-weight rows: 19 VERIFIED, 3 PARTIALLY VERIFIED at half credit, 3 BLOCKED; `(19 + 1.5) / 25 = 82%`. The pending rows are current-head CI and local-copy limits; the blockers are remote clone quota, E2B, and approval/fork publication.
