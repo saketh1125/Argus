@@ -1,11 +1,10 @@
-// Command codesentinel runs the autonomous multi-agent bug-detection pipeline:
-// it ingests a GitHub repository, localizes and analyzes suspicious code,
-// generates and validates fixes, and raises pull requests — with a live
-// dashboard showing progress.
+// Command codesentinel runs the multi-agent bug-analysis pipeline: it ingests
+// repository source, analyzes suspicious code, and generates fix candidates.
+// Validation is unavailable and live GitHub writes are disabled in this build;
+// the local dashboard reports progress.
 //
-// Every external integration (LLM, embeddings, vector DB, sandbox, GitHub)
-// degrades to a deterministic offline adapter when its credential/service is
-// absent, so the full pipeline runs end-to-end with zero keys.
+// External integrations select live or mock adapters when supported. Sandbox
+// validation and live GitHub writes fail closed until their safety gates pass.
 //
 //	go run . --repo https://github.com/owner/repo
 //	go run . --repo ./testdata/sample-repo        # local path (mock clone)
@@ -66,8 +65,16 @@ func run() error {
 	// --- Dashboard / reporter (started before pipeline in --web mode). ---
 	var rep models.Reporter = models.NoopReporter{}
 	var dash *dashboard.Dashboard
+	var launchCh <-chan dashboard.LaunchConfig
 	if !cfg.NoDashboard {
 		dash = dashboard.New(cfg.DashboardPort)
+		if *webFlag {
+			var err error
+			launchCh, err = dash.ListenForLaunch()
+			if err != nil {
+				return err
+			}
+		}
 		if e := dash.Start(); e != nil {
 			fmt.Fprintf(os.Stderr, "warning: dashboard disabled (%v)\n", e)
 			dash = nil
@@ -78,10 +85,9 @@ func run() error {
 
 	// --- Web launcher: wait for the browser form before running the pipeline. ---
 	if *webFlag && dash != nil {
-		launchCh := dash.ListenForLaunch()
 		url := dash.URL()
 		fmt.Printf("\x1b[36m▶ Launcher:\x1b[0m %s\n", url)
-		fmt.Println("  Open the URL above, fill in your credentials, and click Start Analysis.")
+		fmt.Println("  Open the URL above, configure supported providers, and click Start Analysis.")
 		openBrowser(url)
 
 		select {
@@ -109,6 +115,18 @@ func run() error {
 		return fmt.Errorf("init services: %w", err)
 	}
 	gh := tools.NewGitHub(cfg)
+	if gh.Live() {
+		if !cfg.EnableLiveAutoPR {
+			return fmt.Errorf("refusing live GitHub writes: live autonomous PR generation is disabled")
+		}
+		owner, repo, parseErr := gh.ParseURL(cfg.RepoURL)
+		if parseErr != nil || !cfg.AllowsGitHubRepo(owner, repo) {
+			return fmt.Errorf("refusing live GitHub target: add the exact owner/repository to GITHUB_ALLOWED_REPOS")
+		}
+	}
+	if err := requireIsolatedValidationBeforeLivePR(gh.Live(), clients.Sandbox.Live()); err != nil {
+		return err
+	}
 	parser := tools.NewParser(cfg)
 
 	banner(cfg, clients, gh)
@@ -154,7 +172,7 @@ func run() error {
 		return fmt.Errorf("fix generation: %w", err)
 	}
 
-	val := agents.NewValidator(clients.Sandbox, clients.LLM, parser, cfg, rep)
+	val := agents.NewValidator(clients.Sandbox, parser, cfg, rep)
 	validated, err := val.Run(ctx, workdir, fixed)
 	if err != nil {
 		return fmt.Errorf("validation: %w", err)
@@ -184,6 +202,13 @@ func run() error {
 	return nil
 }
 
+func requireIsolatedValidationBeforeLivePR(githubLive, sandboxLive bool) error {
+	if githubLive && !sandboxLive {
+		return fmt.Errorf("refusing live GitHub integration because isolated validation is unavailable")
+	}
+	return nil
+}
+
 func banner(cfg *config.Config, c *services.Clients, gh tools.GitHubClient) {
 	fmt.Println("\n\x1b[1m🛡  CodeSentinel\x1b[0m — autonomous multi-agent bug detection")
 	fmt.Printf("  mode=%s  llm=%s  embed=%s  vectors=%s  sandbox=%s  github=%s\n",
@@ -197,14 +222,8 @@ func applyLaunchConfig(cfg *config.Config, lc dashboard.LaunchConfig) {
 	if lc.RepoURL != "" {
 		cfg.RepoURL = lc.RepoURL
 	}
-	if lc.GitHubToken != "" {
-		cfg.GitHubToken = lc.GitHubToken
-	}
 	if lc.NIMAPIKey != "" {
 		cfg.NIMAPIKey = lc.NIMAPIKey
-	}
-	if lc.E2BAPIKey != "" {
-		cfg.E2BAPIKey = lc.E2BAPIKey
 	}
 	if lc.JinaAPIKey != "" {
 		cfg.JinaAPIKey = lc.JinaAPIKey

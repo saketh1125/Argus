@@ -6,24 +6,28 @@ package config
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-// Config holds every tunable and credential the system uses. Credentials left
-// empty cause the corresponding service factory to select its mock adapter.
+// Config holds every tunable and credential the system uses. Missing
+// credentials select a mock only where one is safe; sandbox validation remains
+// explicitly unavailable until a verified isolated provider is enabled.
 type Config struct {
 	// Target.
 	RepoURL string
 
-	// Credentials (empty => mock mode for that integration).
-	GitHubToken  string
-	NIMAPIKey    string
-	NIMBaseURL   string
-	NIMModel     string
-	JinaAPIKey   string
-	GeminiAPIKey string
-	E2BAPIKey    string
+	// Credentials for supported live integrations; the sandbox stays unavailable.
+	GitHubToken        string
+	AllowedGitHubRepos []string
+	EnableLiveAutoPR   bool
+	NIMAPIKey          string
+	NIMBaseURL         string
+	NIMModel           string
+	JinaAPIKey         string
+	GeminiAPIKey       string
+	E2BAPIKey          string
 
 	// Local services.
 	OllamaHost string
@@ -89,13 +93,15 @@ func Load() *Config {
 	loadDotEnv(findProjectRootEnv())
 
 	return &Config{
-		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
-		NIMAPIKey:    os.Getenv("NIM_API_KEY"),
-		NIMBaseURL:   envOr("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-		NIMModel:     envOr("NIM_MODEL", "openai/gpt-oss-120b"),
-		JinaAPIKey:   os.Getenv("JINA_API_KEY"),
-		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
-		E2BAPIKey:    os.Getenv("E2B_API_KEY"),
+		GitHubToken:        os.Getenv("GITHUB_TOKEN"),
+		AllowedGitHubRepos: csvEnv("GITHUB_ALLOWED_REPOS"),
+		EnableLiveAutoPR:   envBool("ENABLE_LIVE_AUTOPR", false),
+		NIMAPIKey:          os.Getenv("NIM_API_KEY"),
+		NIMBaseURL:         envOr("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+		NIMModel:           envOr("NIM_MODEL", "openai/gpt-oss-120b"),
+		JinaAPIKey:         os.Getenv("JINA_API_KEY"),
+		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
+		E2BAPIKey:          os.Getenv("E2B_API_KEY"),
 
 		OllamaHost: envOr("OLLAMA_HOST", "http://localhost:11434"),
 		QdrantHost: envOr("QDRANT_HOST", "localhost"),
@@ -116,6 +122,31 @@ func Load() *Config {
 	}
 }
 
+func csvEnv(key string) []string {
+	var values []string
+	for _, value := range strings.Split(os.Getenv(key), ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+// AllowsGitHubRepo fails closed unless the exact owner/repository pair was
+// explicitly configured for live autonomous writes.
+func (c *Config) AllowsGitHubRepo(owner, repo string) bool {
+	if c == nil || owner == "" || repo == "" {
+		return false
+	}
+	wanted := owner + "/" + repo
+	for _, allowed := range c.AllowedGitHubRepos {
+		if strings.EqualFold(strings.TrimSpace(allowed), wanted) {
+			return true
+		}
+	}
+	return false
+}
+
 // findProjectRootEnv searches for .env starting from the current working
 // directory and walking up to the filesystem root, looking for a directory that
 // contains go.mod (the project root marker). Falls back to ".env" if not found.
@@ -126,18 +157,18 @@ func findProjectRootEnv() string {
 	}
 	for {
 		// Check for .env in this directory.
-		candidate := dir + "/.env"
+		candidate := filepath.Join(dir, ".env")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 		// Check for go.mod (project root).
-		if _, err := os.Stat(dir + "/go.mod"); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			// We're at the project root but .env wasn't found here either;
 			// return the path so loadDotEnv can try it (it's optional).
 			return candidate
 		}
 		// Walk up.
-		parent := dir[:strings.LastIndexByte(dir, '/')]
+		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
 		}

@@ -1,0 +1,18 @@
+services:
+  argus:
+    build:
+      context: .
+    image: codesentinel:${ARGUS_IMAGE_TAG:-local}
+    restart: "no"
+    environment:
+      # Safe default: dry, deterministic mock integrations. Set FORCE_MOCK=false
+      # only after reviewing the external side effects of the live adapters.
+      FORCE_MOCK: ${FORCE_MOCK:-true}
+      NIM_API_KEY: ${NIM_API_KEY:-}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+      JINA_API_KEY: ${JINA_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      NIM_BASE_URL: ${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NIM_MODEL: ${NIM_MODEL:-openai/gpt-oss-120b}
+      DASHBOARD_PORT: "8080"
+    command: ["--repo", "${ARGUS_REPO_URL:?Set ARGUS_REPO_URL to a repository URL}", "--no-dashboard"]

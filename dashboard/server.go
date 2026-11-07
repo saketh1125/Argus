@@ -92,7 +92,11 @@ func (d *Dashboard) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	if showLauncher {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := tmpl.ExecuteTemplate(w, "launcher-page", nil); err != nil {
+		w.Header().Set("Cache-Control", "no-store")
+		d.mu.RLock()
+		launchToken := d.launchToken
+		d.mu.RUnlock()
+		if err := tmpl.ExecuteTemplate(w, "launcher-page", struct{ CSRFToken string }{CSRFToken: launchToken}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return

@@ -2,7 +2,9 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,6 +19,10 @@ import (
 // (API Contract §5.5).
 const sigCollection = "codesentinel_signatures"
 
+// maxSourceFileBytes bounds memory use and provider input from a single
+// untrusted repository file during indexing.
+const maxSourceFileBytes = 1 << 20
+
 // Preprocessor transforms a raw GitHub repository into a structured, searchable
 // knowledge base: it shallow-clones the repo, parses the top-N recently-modified
 // supported files into a RepoIndex, builds the call graph, and embeds every
@@ -30,6 +36,11 @@ type Preprocessor struct {
 	vstore services.VectorStore
 	cfg    *config.Config
 	rep    models.Reporter
+}
+
+type sourceCandidate struct {
+	abs, rel string
+	mod      int64
 }
 
 // NewPreprocessor wires the preprocessor with its GitHub, parser, embedding, and
@@ -47,6 +58,9 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 
 	owner, repo, perr := p.gh.ParseURL(repoURL)
 	if perr != nil || owner == "" || repo == "" {
+		if p.gh.Live() {
+			return nil, "", "", "", fmt.Errorf("preprocessor: live GitHub mode requires a canonical repository URL")
+		}
 		owner, repo = "demo-owner", "demo-repo"
 	}
 
@@ -54,57 +68,58 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 	if err != nil {
 		return nil, "", owner, repo, fmt.Errorf("preprocessor: create workdir: %w", err)
 	}
+	keepWorkdir := false
+	defer func() {
+		if keepWorkdir {
+			return
+		}
+		if cleanupErr := os.RemoveAll(workdir); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("preprocessor: clean failed workdir: %w", cleanupErr))
+		}
+		workdir = ""
+	}()
 
-	if _, err = p.gh.Clone(ctx, repoURL, workdir); err != nil {
+	cloneResult, cloneErr := p.gh.Clone(ctx, repoURL, workdir)
+	if cloneErr != nil {
+		err = cloneErr
 		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone %q: %w", repoURL, err)
+	}
+	if cloneResult.Path != "" && filepath.Clean(cloneResult.Path) != filepath.Clean(workdir) {
+		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: clone returned an unexpected source path")
+	}
+	snapshotSHA := cloneResult.SnapshotCommitSHA
+	if p.gh.Live() && len(snapshotSHA) != 40 {
+		return nil, workdir, owner, repo, fmt.Errorf("preprocessor: live clone did not provide an immutable commit SHA")
 	}
 	p.rep.SetStage(models.StageIngest, 20)
 
-	// Walk the tree and collect supported files with their mod times.
-	type cand struct {
-		abs, rel string
-		mod      int64
-	}
-	var cands []cand
-	_ = filepath.WalkDir(workdir, func(path string, d os.DirEntry, werr error) error {
-		if werr != nil {
-			return nil // skip unreadable entries, keep walking
-		}
-		if d.IsDir() {
-			name := d.Name()
-			if path != workdir && (name == ".git" || name == "node_modules" || name == "vendor" || name == ".venv") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		ext := filepath.Ext(path)
-		if !p.parser.Supports(ext) {
-			return nil
-		}
-		info, ierr := d.Info()
-		if ierr != nil {
-			return nil
-		}
-		rel, rerr := filepath.Rel(workdir, path)
-		if rerr != nil {
-			rel = path
-		}
-		cands = append(cands, cand{abs: path, rel: rel, mod: info.ModTime().UnixNano()})
-		return nil
-	})
+	// Walk the tree and collect supported regular files with their mod times.
+	// Git checkouts can contain symlinks, so reject them before the later ReadFile
+	// call can follow a link outside the cloned repository.
+	cands, oversizedFiles := collectSourceCandidates(workdir, p.parser)
 
 	// Sort by modification time descending, take the top MaxFiles.
-	sort.Slice(cands, func(i, j int) bool { return cands[i].mod > cands[j].mod })
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].mod != cands[j].mod {
+			return cands[i].mod > cands[j].mod
+		}
+		return cands[i].rel < cands[j].rel
+	})
 	maxFiles := p.cfg.MaxFiles
 	if maxFiles > 0 && len(cands) > maxFiles {
 		cands = cands[:maxFiles]
 	}
 
 	idx = models.NewRepoIndex()
+	idx.SnapshotCommitSHA = snapshotSHA
 	total := len(cands)
 	for i, c := range cands {
 		p.rep.SetFilesProgress(i, total)
-		data, rerr := os.ReadFile(c.abs)
+		data, tooLarge, rerr := readIndexedSourceFile(c.abs)
+		if tooLarge {
+			oversizedFiles++
+			continue
+		}
 		if rerr != nil {
 			p.rep.Log("preprocessor: read %s: %v", c.rel, rerr)
 			continue
@@ -118,6 +133,9 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 		pf.ModTime = c.mod
 		idx.AddFile(pf)
 	}
+	if oversizedFiles > 0 {
+		p.rep.Log("preprocessor: skipped %d supported files larger than %d bytes", oversizedFiles, maxSourceFileBytes)
+	}
 	p.rep.SetFilesProgress(total, total)
 	idx.BuildCallGraph()
 	p.rep.SetStage(models.StageIngest, 70)
@@ -127,7 +145,64 @@ func (p *Preprocessor) Run(ctx context.Context, repoURL string) (idx *models.Rep
 
 	p.rep.SetStage(models.StageIngest, 100)
 	p.rep.Log("preprocessor: indexed %d files, %d signatures", idx.FileCount(), len(idx.Signatures()))
+	keepWorkdir = true
 	return idx, workdir, owner, repo, nil
+}
+
+func collectSourceCandidates(workdir string, parser tools.CodeParser) ([]sourceCandidate, int) {
+	var cands []sourceCandidate
+	oversizedFiles := 0
+	_ = filepath.WalkDir(workdir, func(path string, d os.DirEntry, werr error) error {
+		if werr != nil {
+			return nil // skip unreadable entries, keep walking
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if path != workdir && (name == ".git" || name == "node_modules" || name == "vendor" || name == ".venv") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := filepath.Ext(path)
+		if !parser.Supports(ext) {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		if info.Size() > maxSourceFileBytes {
+			oversizedFiles++
+			return nil
+		}
+		rel, rerr := filepath.Rel(workdir, path)
+		if rerr != nil {
+			rel = path
+		}
+		cands = append(cands, sourceCandidate{abs: path, rel: rel, mod: info.ModTime().UnixNano()})
+		return nil
+	})
+	return cands, oversizedFiles
+}
+
+func readIndexedSourceFile(path string) ([]byte, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxSourceFileBytes+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) > maxSourceFileBytes {
+		return nil, true, nil
+	}
+	return data, false, nil
 }
 
 // embedSignatures embeds every signature's "{file} {name} {signature}" text into

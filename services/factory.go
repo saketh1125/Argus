@@ -23,10 +23,12 @@ type Clients struct {
 // New assembles the service Clients for a run. It builds the shared RateLimiter
 // once, then selects each adapter:
 //
-//   - cfg.ForceMock forces every integration to its mock adapter.
-//   - Otherwise an adapter is chosen real when its credential/service is present
-//     and (for local services) a short, non-fatal probe succeeds; any probe
-//     failure falls back to that integration's mock.
+//   - cfg.ForceMock forces supported integrations to their mock adapters; the
+//     sandbox remains unavailable because mock mode never executes repository code.
+//   - Otherwise a supported adapter is chosen live when its credential/service
+//     is present and (for local services) a short probe succeeds; supported
+//     mock adapters are used when not. Sandbox validation stays unavailable
+//     until its provider contract, bounds, isolation and cleanup are verified.
 //
 // Probes use short timeouts and never abort startup. Mode is computed uniformly
 // from how many selected adapters report Live().
@@ -81,12 +83,17 @@ func selectVectors(ctx context.Context, cfg *config.Config) VectorStore {
 	return newMockVectors()
 }
 
-// selectSandbox picks E2B only when a key is present, else the local executor.
+// selectSandbox refuses validation until the provider API, resource limits,
+// isolation settings, and cleanup behaviour have been verified. An API key by
+// itself is not evidence that the adapter is safe to use.
 func selectSandbox(cfg *config.Config) Sandbox {
-	if cfg.ForceMock || cfg.E2BAPIKey == "" {
-		return newLocalSandbox()
+	if cfg.ForceMock {
+		return newUnavailableSandbox("mock mode does not execute repository code")
 	}
-	return newE2BSandbox(cfg.E2BAPIKey)
+	if cfg.E2BAPIKey != "" {
+		return newUnavailableSandbox("E2B adapter is disabled pending API and live isolation verification")
+	}
+	return newUnavailableSandbox("E2B_API_KEY is not configured; isolated validation is unavailable")
 }
 
 // computeMode reduces the per-adapter Live() flags to a single Mode string:

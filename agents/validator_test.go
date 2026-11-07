@@ -16,8 +16,8 @@ import (
 // the "validated" path regardless of the language/commands.
 type passSandbox struct{}
 
-func (passSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
-	return &services.SandboxResult{Success: true, Logs: "ok"}, nil
+func (passSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
+	return &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: len(spec.Commands), CommandExitCodes: make([]int, len(spec.Commands)), Logs: "ok"}, nil
 }
 func (passSandbox) Name() string { return "pass-sandbox" }
 func (passSandbox) Live() bool   { return false }
@@ -50,7 +50,7 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 		},
 	}
 
-	v := NewValidator(passSandbox{}, &fakeLLM{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	v := NewValidator(passSandbox{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
 	out, err := v.Run(context.Background(), dir, []*models.Issue{iss})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -58,6 +58,9 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	got := out[0]
 	if !got.Validated {
 		t.Fatal("expected Validated=true")
+	}
+	if got.ValidationProvider != "pass-sandbox" || got.ValidationProviderLive {
+		t.Fatalf("validator must record the actual non-live provider: name=%q live=%v", got.ValidationProvider, got.ValidationProviderLive)
 	}
 	if got.Fix == nil || got.Fix.Selected == nil {
 		t.Fatal("expected a selected candidate")
@@ -74,5 +77,189 @@ func TestValidatorCapturesPatchedFile(t *testing.T) {
 	}
 	if !strings.Contains(got.Fix.Selected.PatchedFile, "func g()") {
 		t.Errorf("patched file must preserve sibling code (func g); got %q", got.Fix.Selected.PatchedFile)
+	}
+	if got.Fix.Selected.OriginalFileSHA256 == "" || got.Fix.Selected.PatchedFileSHA256 == "" {
+		t.Fatal("validated patch must carry source and result hashes")
+	}
+	if got.Fix.Selected.Diff == "" || !strings.Contains(got.Fix.Selected.Diff, "return 1") || !strings.Contains(got.Fix.Selected.Diff, "return 2") {
+		t.Fatalf("expected mechanically generated function diff, got %q", got.Fix.Selected.Diff)
+	}
+}
+
+func TestValidatorFailsClosedWhenSourceFileMissing(t *testing.T) {
+	sandbox := &recordSandbox{}
+	iss := &models.Issue{
+		File: "missing.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() {}"}}},
+	}
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), t.TempDir(), []*models.Issue{iss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iss.Validated || !iss.Demoted || len(sandbox.specs) != 0 {
+		t.Fatalf("missing source must fail before sandbox validation: validated=%v demoted=%v sandbox_calls=%d", iss.Validated, iss.Demoted, len(sandbox.specs))
+	}
+}
+
+func TestValidatorRejectsStaleOriginalFunctionBeforeSandbox(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte("package main\nfunc f() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sandbox := &recordSandbox{}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 9 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
+	}
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iss.Validated || !iss.Demoted || len(sandbox.specs) != 0 {
+		t.Fatalf("stale source must fail before sandbox: valid=%v demoted=%v calls=%d", iss.Validated, iss.Demoted, len(sandbox.specs))
+	}
+}
+
+func TestValidatorDoesNotGenerateTestCommands(t *testing.T) {
+	original := "package main\nfunc f() {}\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() {}", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() {}"}}},
+	}
+	sandbox := &recordSandbox{}
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	_, err := v.Run(context.Background(), dir, []*models.Issue{iss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sandbox.specs) != 1 || len(sandbox.specs[0].Commands) != 1 {
+		t.Fatalf("validator must provide only its deterministic syntax command, specs=%+v", sandbox.specs)
+	}
+}
+
+func TestBuildSpecUsesLinuxCommandsAndPathsOnEveryHost(t *testing.T) {
+	v := NewValidator(passSandbox{}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	file := filepath.Join("src", "quoted'name.py")
+	spec := v.buildSpec("python", file, "print('ok')\n")
+	if _, ok := spec.Files["src/quoted'name.py"]; !ok {
+		t.Fatalf("sandbox path must use POSIX separators, got %#v", spec.Files)
+	}
+	if len(spec.Commands) != 1 || spec.Commands[0] != `python3 -m py_compile 'src/quoted'\''name.py'` {
+		t.Fatalf("sandbox command must use Linux command name and POSIX quoting, got %#v", spec.Commands)
+	}
+}
+
+func TestValidatorRejectsIncompleteOrContradictorySandboxResults(t *testing.T) {
+	cases := []struct {
+		name   string
+		result *services.SandboxResult
+	}{
+		{name: "missing command completion", result: &services.SandboxResult{Success: true}},
+		{name: "nonzero exit", result: &services.SandboxResult{Success: true, ExitCode: 2, CommandsRun: 1}},
+		{name: "hidden earlier failure", result: &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: 1, CommandExitCodes: []int{1}}},
+		{name: "timeout", result: &services.SandboxResult{Success: true, CommandsRun: 1, TimedOut: true}},
+		{name: "reported failure", result: &services.SandboxResult{Success: false, CommandsRun: 1}},
+		{name: "oversized output", result: &services.SandboxResult{Success: true, CommandsRun: 1, Logs: strings.Repeat("x", 4<<20+1)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			iss := validateSingleGoCandidate(t, resultSandbox{result: tc.result}, context.Background())
+			if iss.Validated || !iss.Demoted || iss.Fix.Selected != nil {
+				t.Fatalf("invalid sandbox result was accepted: validated=%v demoted=%v selected=%v", iss.Validated, iss.Demoted, iss.Fix.Selected)
+			}
+		})
+	}
+}
+
+func TestValidatorRejectsResultAfterContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	validResult := &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: 1, CommandExitCodes: []int{0}}
+	iss := validateSingleGoCandidate(t, resultSandbox{result: validResult}, ctx)
+	if iss.Validated || !iss.Demoted {
+		t.Fatalf("cancelled validation must not accept a success result: validated=%v demoted=%v", iss.Validated, iss.Demoted)
+	}
+}
+
+func TestValidatorClearsForgedProviderProvenanceWhenSandboxFails(t *testing.T) {
+	const original = "package main\nfunc f() int { return 1 }\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f", Validated: true,
+		ValidationProvider: "model-claimed-live-sandbox", ValidationProviderLive: true,
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 1 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
+	}
+	v := NewValidator(resultSandbox{result: &services.SandboxResult{Success: false}}, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	if _, err := v.Run(context.Background(), dir, []*models.Issue{iss}); err != nil {
+		t.Fatal(err)
+	}
+	if iss.ValidationProvider != "result-fixture" || iss.ValidationProviderLive || iss.Validated || !iss.Demoted {
+		t.Fatalf("failed validation retained forged provenance or lost the actual attempted provider: %+v", iss)
+	}
+}
+
+func validateSingleGoCandidate(t *testing.T, sandbox services.Sandbox, ctx context.Context) *models.Issue {
+	t.Helper()
+	const original = "package main\nfunc f() int { return 1 }\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &models.Issue{
+		File: "f.go", FunctionName: "f",
+		Fix: &models.Fix{OriginalFunction: "func f() int { return 1 }", Candidates: []models.FixCandidate{{RewrittenFunction: "func f() int { return 2 }"}}},
+	}
+	v := NewValidator(sandbox, tools.NewParser(testConfig()), testConfig(), models.NoopReporter{})
+	if _, err := v.Run(ctx, dir, []*models.Issue{iss}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return iss
+}
+
+type resultSandbox struct{ result *services.SandboxResult }
+
+func (s resultSandbox) Run(context.Context, services.SandboxSpec) (*services.SandboxResult, error) {
+	return s.result, nil
+}
+func (resultSandbox) Name() string { return "result-fixture" }
+func (resultSandbox) Live() bool   { return false }
+
+type recordSandbox struct{ specs []services.SandboxSpec }
+
+func (s *recordSandbox) Run(_ context.Context, spec services.SandboxSpec) (*services.SandboxResult, error) {
+	s.specs = append(s.specs, spec)
+	return &services.SandboxResult{Success: true, ExitCode: 0, CommandsRun: len(spec.Commands), CommandExitCodes: make([]int, len(spec.Commands))}, nil
+}
+func (*recordSandbox) Name() string { return "record" }
+func (*recordSandbox) Live() bool   { return false }
+
+func TestSafeRepoFileAcceptsNativeWindowsPathAndRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	rel := filepath.Join("src", "nested", "main.go")
+	target := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := safeRepoFile(root, rel)
+	if err != nil {
+		t.Fatalf("native relative path %q rejected: %v", rel, err)
+	}
+	if got != target {
+		t.Fatalf("safe path = %q, want %q", got, target)
+	}
+	if _, err := safeRepoFile(root, filepath.Join("..", "outside.go")); err == nil {
+		t.Fatal("parent traversal path must be rejected")
 	}
 }

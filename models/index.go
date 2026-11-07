@@ -7,10 +7,11 @@ import "sync"
 // preprocessor populates it (single writer) and the analyst goroutines read
 // from it in parallel, so every access goes through the RWMutex.
 type RepoIndex struct {
-	mu        sync.RWMutex
-	files     map[string]*ParsedFile
-	callGraph map[string]*CallGraphNode
-	sigs      []Signature
+	mu                sync.RWMutex
+	SnapshotCommitSHA string
+	files             map[string]*ParsedFile
+	callGraph         map[string]*CallGraphNode
+	sigs              []Signature
 }
 
 // NewRepoIndex returns an empty, ready-to-use index.

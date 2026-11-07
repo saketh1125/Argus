@@ -639,7 +639,7 @@ const panelTemplate = `{{define "panel"}}
     <div class="kpi">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9S3 16.97 3 12 7.03 3 12 3"/></svg>
       <div class="value">{{.ValidatedDone}}/{{.ValidatedTotal}}</div>
-      <div class="sub muted">fixes sandbox-checked</div>
+      <div class="sub muted">validation attempts processed</div>
     </div>
     <div class="kpi">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -1125,6 +1125,8 @@ const launcherTemplate = `{{define "launcher-page"}}<!DOCTYPE html>
   <div class="card">
     <form method="POST" action="/start">
 
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
       <h2>Target Repository</h2>
       <div class="field">
         <label>Repo URL or local path</label>
@@ -1136,30 +1138,15 @@ const launcherTemplate = `{{define "launcher-page"}}<!DOCTYPE html>
         </div>
       </div>
 
-      <h2>API Keys</h2>
-      <div class="grid-2">
-        <div class="field">
-          <label>GitHub Token <span class="hint">(PR creation)</span></label>
-          <div class="input-wrap">
-            <input type="password" name="github_token" id="github_token" placeholder="ghp_..." autocomplete="current-password">
-            <button type="button" class="toggle-pw" data-target="github_token" aria-label="Show GitHub token">👁</button>
-          </div>
-        </div>
-        <div class="field">
+      <h2>Model and Embedding Keys</h2>
+      <div class="field">
           <label>NIM API Key (LLM) <span class="hint">(Nvidia NIM)</span></label>
           <div class="input-wrap">
             <input type="password" name="nim_api_key" id="nim_api_key" placeholder="nvapi_..." autocomplete="current-password">
             <button type="button" class="toggle-pw" data-target="nim_api_key" aria-label="Show NIM API key">👁</button>
           </div>
-        </div>
       </div>
-      <div class="field">
-        <label>E2B API Key (cloud sandbox) <span class="hint">blank = local syntax check</span></label>
-        <div class="input-wrap">
-          <input type="password" name="e2b_api_key" id="e2b_api_key" placeholder="e2b_..." autocomplete="current-password">
-          <button type="button" class="toggle-pw" data-target="e2b_api_key" aria-label="Show E2B API key">👁</button>
-        </div>
-      </div>
+      <p class="hint">Isolated validation is currently unavailable. Fix candidates that cannot be validated are demoted and are not eligible for publication.</p>
       <div class="row" style="margin-top:.75rem">
         <div>
           <label>Jina API Key (embeddings fallback)</label>

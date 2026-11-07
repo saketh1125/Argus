@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -36,6 +35,8 @@ type nimClient struct {
 // cannot stall the pipeline. Set below the analyst goroutine timeout (90s) so
 // the analyst context rarely fires before the HTTP layer cancels cleanly.
 const nimHTTPTimeout = 60 * time.Second
+
+const nimMaxRetryAfter = 10 * time.Second
 
 // newNIMClient builds a live NIM adapter. baseURL is the API root (e.g.
 // "https://integrate.api.nvidia.com/v1"); every call is gated by limiter.
@@ -128,7 +129,7 @@ func (c *nimClient) Complete(ctx context.Context, req CompletionRequest) (*Compl
 			return nil, fmt.Errorf("nim: http: %w", err)
 		}
 
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, readErr := readServiceResponse(resp)
 		resp.Body.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("nim: read response: %w", readErr)
@@ -164,18 +165,10 @@ func (c *nimClient) Complete(ctx context.Context, req CompletionRequest) (*Compl
 				return nil, fmt.Errorf("nim: status %d: %s", status, strings.TrimSpace(string(respBody)))
 			}
 			retried429 = true
-			delay := 10 * time.Second
-			if val := resp.Header.Get("Retry-After"); val != "" {
-				if secs, parseErr := strconv.Atoi(val); parseErr == nil {
-					delay = time.Duration(secs) * time.Second
-				}
+			delay := nimRetryAfterDelay(resp.Header.Get("Retry-After"))
+			if err := waitForNIMRetry(ctx, delay); err != nil {
+				return nil, err
 			}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			default:
-			}
-			time.Sleep(delay)
 			continue
 		}
 
@@ -185,12 +178,9 @@ func (c *nimClient) Complete(ctx context.Context, req CompletionRequest) (*Compl
 			if attempt >= 4 {
 				return nil, lastErr
 			}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			default:
+			if err := waitForNIMRetry(ctx, backoffDurations[attempt-1]); err != nil {
+				return nil, err
 			}
-			time.Sleep(backoffDurations[attempt-1])
 			continue
 		}
 
@@ -200,6 +190,35 @@ func (c *nimClient) Complete(ctx context.Context, req CompletionRequest) (*Compl
 
 	// Unreachable: the loop always returns or continues.
 	return nil, fmt.Errorf("nim: exhausted retries")
+}
+
+func nimRetryAfterDelay(value string) time.Duration {
+	const defaultDelay = 10 * time.Second
+	if value == "" {
+		return defaultDelay
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 0 {
+		return defaultDelay
+	}
+	if seconds > int(nimMaxRetryAfter/time.Second) {
+		return nimMaxRetryAfter
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func waitForNIMRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // Name identifies the adapter as "nim:<model>".

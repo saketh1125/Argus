@@ -18,18 +18,29 @@ import (
 
 // PRSpec describes a pull request to create.
 type PRSpec struct {
-	Title string
-	Body  string
-	Head  string // source branch
-	Base  string // target branch (usually default)
+	Title           string
+	Body            string
+	Head            string // source branch
+	Base            string // target branch (usually default)
+	ExpectedBaseSHA string // analyzed commit; real adapter rechecks before opening
 }
 
 // CommitSpec describes a single-file commit onto a branch.
 type CommitSpec struct {
-	Branch  string
-	Path    string
-	Content string
-	Message string
+	Branch                       string
+	Path                         string
+	Content                      string
+	Patch                        string
+	ExpectedContentSHA256        string
+	ExpectedPatchedContentSHA256 string
+	Message                      string
+}
+
+// CloneResult identifies the extracted source tree and the immutable commit
+// whose archive produced it. Mock clones leave SnapshotCommitSHA empty.
+type CloneResult struct {
+	Path              string
+	SnapshotCommitSHA string
 }
 
 // GitHubClient performs all GitHub-side operations. The real adapter wraps
@@ -38,12 +49,13 @@ type CommitSpec struct {
 type GitHubClient interface {
 	// ParseURL extracts owner/repo from a GitHub URL.
 	ParseURL(url string) (owner, repo string, err error)
-	// Clone shallow-clones the repo to a local directory and returns its path.
-	Clone(ctx context.Context, url, dest string) (string, error)
+	// Clone fetches a bounded source snapshot into dest and returns its path and
+	// pinned source commit when available.
+	Clone(ctx context.Context, url, dest string) (CloneResult, error)
 	// DefaultBranch returns the repo's default branch name.
 	DefaultBranch(ctx context.Context, owner, repo string) (string, error)
 	// CreateBranch creates branch `name` from `base`.
-	CreateBranch(ctx context.Context, owner, repo, base, name string) error
+	CreateBranch(ctx context.Context, owner, repo, base, name, expectedBaseSHA string) error
 	// CommitFile commits a single file change to a branch.
 	CommitFile(ctx context.Context, owner, repo string, spec CommitSpec) error
 	// CreatePR opens a pull request and returns its number and URL.

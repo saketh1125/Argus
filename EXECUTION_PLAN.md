@@ -362,16 +362,17 @@ Suggested checks (adapt to repository scripts; inspect git status before formatt
 
 ### Acceptance criteria
 
-- [ ] Exact baseline commit and environment recorded.
-- [ ] Existing test/build outcomes documented accurately.
-- [ ] No arbitrary LLM-supplied command can execute on the host.
-- [ ] No untrusted repository code is executed outside genuine isolation.
-- [ ] Missing sandbox is reported as validation unavailable.
-- [ ] Validator cannot mark a partial/function-only rewrite as a valid full-file patch.
-- [ ] PR agent refuses missing, empty, stale or incomplete full-file patches.
-- [ ] Regression tests cover source mismatch and preservation of unrelated code.
-- [ ] Mock/live adapter state is explicit.
-- [ ] CI runs required checks successfully.
+- [VERIFIED] Exact baseline commit and environment recorded.
+- [VERIFIED] Existing test/build outcomes documented accurately; local build exits 0 with restricted stat-cache warning.
+- [VERIFIED] No arbitrary LLM-supplied command can execute on the host.
+- [VERIFIED] Repository code is not executed on the host; without a verified isolated provider, validation is unavailable and code does not run.
+- [VERIFIED] Missing or disabled sandbox is reported as validation unavailable.
+- [VERIFIED] Validator cannot mark a partial/function-only rewrite as a valid full-file patch or accept an incomplete/contradictory sandbox result.
+- [VERIFIED] PR agent and production GitHub client refuse live writes before any side effect.
+- [VERIFIED] Regression tests cover source mismatch, unrelated-code preservation, sandbox cancellation/results, and GitHub write uncertainty.
+- [VERIFIED] Successful sandbox attempts record the actual provider and live/mock mode; failed attempts clear model-supplied validation claims, and publication rejects missing or non-live sandbox provenance.
+- [PARTIALLY VERIFIED] Mock/live adapter state is explicit; mock mode is visible, while no real sandbox provider is enabled.
+- [VERIFIED] CI required checks pass on the latest pushed checkpoint. Run [#105](https://github.com/saketh1125/Argus/actions/runs/41696177324) passed formatting, tests, vet, race, native build and Windows AMD64 cross-build on `a4e70bc`; the implementation change `71033f8` separately passed run [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609).
 
 ### Exit gate
 
@@ -918,7 +919,7 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 
 | Phase | Status | Evidence / commit | Blockers |
 |---|---|---|---|
-| P0 — Baseline and safety | NOT STARTED | — | Establish baseline; fix host execution and incomplete patch fallback |
+| P0 — Baseline and safety | IN PROGRESS | Current verified documentation checkpoint `628b05e`; CI run [#118](https://github.com/saketh1125/Argus/actions/runs/41701781436) passed every step. PR #2 remains open, draft and unmerged. | Genuine E2B execution remains unavailable/unverified. Live GitHub publication is disabled pending exact-patch approval and fork workflow. |
 | P1 — Reliable analysis | NOT STARTED | — | Evidence quality, deterministic ingestion, Kryptos regression corpus |
 | P2 — Patch and validation | NOT STARTED | — | Full repository sandbox validation |
 | P3 — Curated orchestration | NOT STARTED | — | Registry, batch jobs, persistence |
@@ -927,16 +928,89 @@ Never mark a phase complete without recording test evidence, commit SHA and rema
 | P6 — Deployment | NOT STARTED | — | Security, operations and deployed workflow |
 | P7 — Evaluation/release | NOT STARTED | — | Benchmark and measured quality |
 
+### Phase 0 verification checkpoint — 2026-11-04
+
+| Requirement | Status | Evidence / limitation |
+|---|---|---|
+| Exact baseline and environment recorded | VERIFIED | Baseline and current remote head recorded above; Go 1.27.3, Windows/AMD64, `CGO_ENABLED=0`. |
+| Existing test/build outcomes documented accurately | VERIFIED | On `1199f70`, credential-free `go test ./... -count=1`, `go vet ./...`, and `go build ./...` passed; build exited 0 with a restricted module stat-cache access warning. Local race test cannot start because CGO is disabled; CI #118 passed race and all other steps on documentation checkpoint `628b05e`. |
+| No arbitrary LLM-supplied command executes on host | VERIFIED | Validator uses deterministic commands and no host command runner; earlier CI and tests cover this boundary. |
+| No untrusted repository code executes outside genuine isolation | VERIFIED (fail closed) | Sandbox adapter removed; with or without E2B credentials it reports unavailable and refuses commands. No live sandbox execution is claimed. |
+| Missing integration credentials cannot enable unsafe fallbacks | VERIFIED | `TestMissingProviderCredentialsSelectVisibleMocksAndUnavailableValidation`, `TestMissingE2BSelectsUnavailableSandbox`, `TestE2BCredentialDoesNotEnableUnverifiedSandbox` and `TestUnavailableSandboxRefusesCommands` pass. Blank GitHub/NIM keys select labelled mocks; missing E2B yields an explicit unavailable error and no host execution. |
+| Validator cannot accept a function-only rewrite as a full file | VERIFIED | Existing complete-file/provenance regression tests pass in `go test ./agents`. |
+| PR agent rejects absent, empty, stale, incomplete or mutated full-file provenance | VERIFIED | Existing provenance, conflict and base SHA tests pass; live PR entry point now refuses before any write until exact approval and fork publication exist. |
+| Regression tests preserve source/siblings and reject stale source | VERIFIED | Validator and GitHub patch safety tests pass. |
+| GitHub write retry/partial-failure handling is bounded | VERIFIED | Write requests make a single attempt and surface uncertain outcomes; response size and client time are bounded. A deterministic branch collision now stops before commit/PR instead of generating a new branch that could duplicate an uncertain prior publication. Focused regression confirms one branch attempt and no commit or PR on collision. |
+| Sandbox results must account for every command and reject timeout/nonzero/cancellation/oversized output | VERIFIED | Validator requires success, aggregate and per-command zero exits, no timeout, exact command count, active context, and no more than 4 MiB of output; adversarial tests cover incomplete, contradictory, cancelled and oversized results. |
+| Validation provenance records the actual provider and gates publication | VERIFIED | Analyst decoding ignores forged validation/provider/fix fields; `TestAnalystIgnoresForgedValidationAndProviderFields` covers this boundary. Validator also clears model-supplied provider claims, records the attempted adapter and live/mock mode, and patch preparation rejects missing or non-live provenance. CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed. |
+| Direct live GitHub client writes cannot bypass the PR agent | VERIFIED | Production client refuses branch, file, PR and issue writes before network calls; regression test confirms zero requests. |
+| Host Git is not executed during remote repository ingestion; local copies cannot read symlink targets | VERIFIED | Remote source arrives as a bounded REST archive and preprocessing executes no host Git process. The local copy fallback rejects symlinks and special files; preprocessing also skips symlink entries. The symlink regression executed in Ubuntu CI run #65; Windows local test skips because symlink creation requires an unavailable privilege. |
+
+### Current audit progress — 2026-11-03
+
+- Replaced remote `git clone` with GitHub REST metadata resolution, commit-SHA pinning and bounded archive extraction. Limits: 128 MiB compressed transfer, 384 MiB expanded stream, 256 MiB aggregate regular-file data, 100,000 tar entries and a two-minute deadline.
+- Unsafe paths and special entry types fail closed; symlinks and hard links are skipped. Redirects must target HTTPS `codeload.github.com`; GitHub authorization is not forwarded. Preprocessing consumes the returned immutable SHA and no longer invokes host Git.
+- Mocked regression tests cover immutable pinning, no-token redirect transfer, traversal rejection, link skipping, and expanded/file/entry budgets. `go test ./...`, `go vet ./...`, `go build ./...` and `git diff --check` pass locally. Build emitted a restricted module stat-cache access warning but exited 0. CI run [41692502687](https://github.com/saketh1125/Argus/actions/runs/41692502687) exposed that Linux accepted a Windows drive-like `C:` component under `filepath.IsLocal`; rejecting colon-bearing names on every OS fixed it. Follow-up run [41693458484](https://github.com/saketh1125/Argus/actions/runs/41693458484) passed every configured step.
+- Current estimate: **90%** across 25 equal-weight rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED; `(22 + 0.5) / 25 = 90%`. The remaining partial row is explicit mock/live state. E2B live verification and exact-patch approval/fork publication remain blocked.
+| Mock/live state is explicit | PARTIALLY VERIFIED | Mock run banner identifies mock adapters and unavailable sandbox. No live-provider mode is enabled for validation/publication. |
+| CI required checks pass on this audit's code and checkpoint | VERIFIED | GitHub Actions run [41695801609](https://github.com/saketh1125/Argus/actions/runs/41695801609) passed formatting, full tests, vet, race, native build and Windows AMD64 cross-build on `71033f8`. |
+| Linux sandbox command/path generation is host-independent | VERIFIED | `TestBuildSpecUsesLinuxCommandsAndPathsOnEveryHost`, focused/full tests, and CI runs #56/#57 verify POSIX paths, Python 3 command naming and POSIX shell quoting from Windows and Linux CI. This verifies command construction, not live E2B behavior. |
+| Local launcher prevents cross-site or replayed analysis starts | VERIFIED | Launcher validates exact loopback Host/Origin and a cryptographic one-time POST token, bounds the request body, accepts only one concurrent launch, and serves the token page with `no-store`. Focused tests cover cross-site, rebound Host, wrong port, query-only token, oversized body, replay and concurrent submission; full local tests and CI #61 pass. Disabled GitHub/E2B key fields were removed from the launcher. |
+| Preprocessing bounds each source file read and provider input | VERIFIED | Supported files larger than 1 MiB are excluded by metadata and rechecked with a bounded read; oversize and bounded-read regressions pass locally and in CI #69. |
+| Live model, embedding and vector-service responses and retries are bounded | VERIFIED | NIM, Ollama, Jina, Gemini and Qdrant responses share a 4 MiB capped reader; NIM `Retry-After` is capped at 10 seconds and all backoff waits observe cancellation. Focused mocked-response/retry tests, full local tests and CI #74/#75 pass on `114ebd4`. |
+| Host Git is not executed to ingest untrusted remote repository source | VERIFIED | Live ingestion resolves GitHub's default branch to a 40-character commit SHA through REST, then retrieves that exact commit as an archive. Preprocessing no longer invokes host Git; mocked HTTP regression verifies SHA-pinned archive selection and no bearer token forwarding to codeload. |
+| Failed preprocessing cleans partial checkout state | VERIFIED | Preprocessor removes its temporary checkout on any failed return and clears the returned workdir. A synthetic partial-clone failure regression and CI #80 pass on `bebaa31`. |
+| Local directory-copy fallback has aggregate size and entry limits | VERIFIED | Local directory copies cap total copied bytes at 256 MiB and entries at 100,000; bounded reads limit file growth. Reads now use `os.Root` handles and compare opened identities to inspected entries, preventing symlink-swap redirection. Regression tests cover file/directory replacement after inspection, symlink rejection, aggregate budgets, exact limits and entry exhaustion. CI #112 exposed unsorted `File.ReadDir` ordering; sorting names restored deterministic behavior and CI #114 passed. |
+| Remote source transfer and extraction have hard byte, entry and time bounds | VERIFIED | Live archive fetch is capped at 128 MiB compressed, 384 MiB expanded, 256 MiB regular-file payload and 100,000 tar entries, under a two-minute context deadline. Extraction rejects traversal and special files, skips links, and only accepts a strict HTTPS codeload redirect without forwarding GitHub authorization. Mocked regressions cover pinning, redirect auth isolation, traversal, links and expansion/file/entry budgets. CI #97 exposed a Windows drive-like colon path accepted on Linux; rejecting colon-bearing names on every OS fixed it. Full local tests, vet, build and CI #99 pass. |
+| Current E2B API, isolation settings, resource bounds, cleanup and live behavior | BLOCKED | The unverified adapter was removed and no supported adapter is enabled. Credential-free tests prove missing or present-but-disabled configuration cannot run repository code. Live verification would require a reviewed adapter and `E2B_API_KEY`; the key is absent and will not be requested or transferred without explicit authorization. The official project documents JavaScript/Python SDKs; the Go SDK examined identifies itself as unofficial and community-maintained. |
+| Exact-patch human approval and fork-based contribution publication | BLOCKED | Not implemented. Live writes now fail closed; no credentials or live publication tests were used. |
+
+### Publication retry and E2B adapter audit — 2026-11-04
+
+- Removed the branch-collision timestamp retry. A pre-existing deterministic branch may be residue from a prior partial or response-lost publication; the candidate is now demoted after one failed branch create, with no follow-up commit or PR. Added `TestPRAgentExistingBranchCollisionDoesNotRetryWithNewBranch`.
+- Official E2B materials currently document JavaScript and Python SDKs; the Go SDK found is community-maintained. The current SDK exposes explicit internet-access control and isolated microVMs, but its live behavior still cannot be established through credential-free mocks. No unsupported SDK dependency or unverified live adapter was added; the factory remains fail-closed.
+- Focused tests, full `go test ./...`, `go vet ./...`, and `go build ./...` pass locally. Build exits 0 with a restricted Go module stat-cache warning. GitHub Actions run [#103](https://github.com/saketh1125/Argus/actions/runs/41695801609) passed formatting, tests, vet, race tests, native build and Windows AMD64 cross-build on `71033f8`.
+- Updated estimate: **90%** over 25 rows: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED; `(22 + 0.5) / 25 = 90%`. Only mock/live state remains partially verified; E2B live verification and exact-approval/fork publication remain blocked.
+
+### Forged analyst provenance regression — 2026-11-04
+
+- Added `TestAnalystIgnoresForgedValidationAndProviderFields`. An adversarial analyst response supplies `validated=true`, live E2B provenance, a validation log and fake fix metadata; the constructed issue retains none of those trusted fields.
+- Focused regression, full `go test ./... -count=1`, `go vet ./...`, `go build ./...` and `git diff --check` passed locally. Build exited 0 with the restricted Go module stat-cache warning. CI [#109](https://github.com/saketh1125/Argus/actions/runs/41697879198) passed all configured checks on `cea1c59`.
+- This adds regression evidence for the existing provenance guarantee; it does not enable sandbox execution or live publication. The estimate remains **90%**: 22 VERIFIED, 1 PARTIALLY VERIFIED, 2 BLOCKED across 25 equal-weight rows.
+
+### Local-copy filesystem race hardening — 2026-11-04
+
+- Replaced path-based recursive source reads with Go `os.Root` handles. Directory and file identities are checked after opening; if an inspected entry is swapped for a symlink or different object, copying fails before reading it. Added deterministic replacement regressions for files and directories.
+- The first Linux CI attempt [#112](https://github.com/saketh1125/Argus/actions/runs/41699606817) exposed that `File.ReadDir` is not sorted, unlike the previous `os.ReadDir` behavior. Sorting entries restored deterministic aggregate-budget selection. Follow-up CI [#114](https://github.com/saketh1125/Argus/actions/runs/41700207329) passed every configured step.
+- Focused copy regressions, full local tests, vet, build and diff check pass. Local Windows cannot perform the rename needed for race simulation, so those tests skip there; Linux CI executed them. The estimate remains 90%; E2B live verification and exact-approval/fork publication remain blocked.
+
+### Credential and verification inventory
+
+`.env` is absent; presence-only checks on 2026-11-04 confirmed `GITHUB_TOKEN`, `NIM_API_KEY`, `E2B_API_KEY`, `JINA_API_KEY`, `GEMINI_API_KEY` are unset and `ARGUS_RUN_LIVE_NIM_TESTS` is false. No secret values were read or logged. The focused suites and full suite passed with live-provider opt-in disabled.
+
+| Integration | Environment variables | Credential-free / mock verification | Live verification |
+|---|---|---|---|
+| GitHub | `GITHUB_TOKEN`, `GITHUB_ALLOWED_REPOS`, `ENABLE_LIVE_AUTOPR` | Unit tests, mocked GitHub client, offline demo. Live writes are refused by `PRAgent`. | Would require a GitHub token and exact repo authorization; intentionally not run. |
+| NVIDIA NIM | `NIM_API_KEY`, optional `NIM_BASE_URL`, `NIM_MODEL` | Mock model and unit tests. Live test additionally requires `ARGUS_RUN_LIVE_NIM_TESTS=true`. | Requires NIM key and explicit test opt-in; not run. |
+| Embeddings | `JINA_API_KEY`, `GEMINI_API_KEY`; optional local `OLLAMA_HOST`, `EMBED_MODEL` | Deterministic mock/hash embeddings; local Ollama probe is optional. | Provider key or locally running Ollama; not required for safety tests. |
+| Qdrant | `QDRANT_HOST`, `QDRANT_PORT` | In-memory mock vector store. | Local or remote Qdrant endpoint; no credential configured or needed by unit tests. |
+| E2B | `E2B_API_KEY` | Unavailable-provider tests prove fail-closed behavior with missing and present synthetic test credentials; key presence cannot enable the unverified adapter. | Live check requires a reviewed supported adapter and `E2B_API_KEY`. No credential is requested or transferred without explicit authorization. Not attempted. |
+| Runtime controls | `MAX_RPM`, `MAX_FILES`, `ANALYST_PARALLEL`, `FIX_CANDIDATES`, `CONFIDENCE_GATE`, `LOCALIZE_FALLBACK`, `SANDBOX_TIMEOUT`, `DASHBOARD_PORT`, `FORCE_MOCK`, `NO_DASHBOARD` | Defaults and mock tests. | No credentials required. |
+
+Verification classes: credential-free tests exercise configuration, adapter selection, validation guards and patch/GitHub safety; mock-based integration exercises the offline sample flow and mocked HTTP side effects; live NIM requires `NIM_API_KEY` and `ARGUS_RUN_LIVE_NIM_TESTS=true`; live E2B requires `E2B_API_KEY` after a reviewed adapter exists; GitHub live publication would need a token, exact repository allowlist and publication authorization, but the code rejects live writes today. Missing model/GitHub keys choose clearly labelled deterministic mocks, and missing or present-but-disabled E2B returns an explicit unavailable error. These behaviors do not run repository code or write to GitHub. For this continuation, `go test ./services ./tools ./config . -count=1` and `go test ./... -count=1` passed; `go vet ./...` passed; `go build ./...` exited 0 with the stat-cache warning. The live NIM opt-in was false and all integration credential presence checks were false.
+
 ### Current next action
 
-Start **P0.1 — Establish local baseline**. Do not add features yet.
+Keep repository-code execution and live publication disabled. The next highest-value Phase 0 action is to design and implement exact-patch approval plus fork-based publication while preserving the current no-live-write boundary; the existing PR agent refuses live writes before side effects. A reviewed supported E2B adapter and live verification remain separate blockers. Live E2B verification requires `E2B_API_KEY` after adapter review and explicit authorization before any credential transfer; do not request or transfer credentials without that authorization.
 
-1. Inspect git status and current commit.
-2. Run and record current test/build checks.
-3. Reproduce current adapter selection.
-4. Trace unsafe sandbox execution and incomplete patch fallback.
-5. Implement and test the two P0 fixes.
-6. Stop and report against the P0 exit gate.
+### Credential-free continuation — 2026-11-04
+
+- Reconfirmed remote branch head `1199f701ddfa431a431c64192c25dff8a237d622` with `git ls-remote`; local `HEAD` matches and the working tree was clean before this documentation update. `git fetch` could not write `.git/FETCH_HEAD` in this restricted checkout. The GitHub CLI is unauthenticated; connected GitHub read-only metadata confirms PR #2 is open, draft, unmerged, and points at `1199f70`.
+- Current-head GitHub Actions run [#117](https://github.com/saketh1125/Argus/actions/runs/41700509066) completed successfully; combined status returned no failing statuses.
+- Inspected `.env.example`, `config.Load`, environment references, adapter selection, and integration tests. No `.env` exists. Presence-only checks found `GITHUB_TOKEN`, `NIM_API_KEY`, `E2B_API_KEY`, `JINA_API_KEY`, and `GEMINI_API_KEY` unset; `ARGUS_RUN_LIVE_NIM_TESTS` was not enabled. Values were never read or printed.
+- Credential-free verification: `go test ./services ./tools ./config . -count=1` and `go test ./... -count=1` passed. Mock/no-credential regressions confirm GitHub and NIM use named mock adapters and unavailable E2B refuses execution. `go vet ./...` passed; `go build ./...` exited 0 after a restricted Go module stat-cache warning.
+- Credential inventory and live-test prerequisites are recorded above. No credential request is needed for the remaining credential-free or mock-based work. Live E2B remains unverified; its exact credential requirement is `E2B_API_KEY`, usable only after a reviewed adapter exists and authorization for live verification is given. Live NIM requires `NIM_API_KEY` plus `ARGUS_RUN_LIVE_NIM_TESTS=true`. GitHub publication remains hard-disabled.
+- The score remains **90%** over 25 equal-weight acceptance rows: 22 VERIFIED + 0.5 for one PARTIALLY VERIFIED row, with two BLOCKED rows, `(22 + 0.5) / 25 = 90%`. Documentation and extra verification do not change the two blockers or satisfy the Phase 0 exit gate.
 
 ---
 
@@ -950,6 +1024,7 @@ Record only decisions that materially change this plan. Do not create parallel n
 | 2026-11-01 | Repository discovery frozen as curated | No autonomous GitHub-wide discovery in V1 |
 | 2026-11-01 | Fork-based publishing and explicit approval required | No direct upstream writes and no automatic merging |
 | 2026-11-01 | This file is the canonical execution source | Earlier plans/specifications are reference-only |
+| 2026-11-03 | Missing isolation must make validation unavailable | Removed the host-local command executor; mock mode cannot claim repository validation |
 
 ---
 

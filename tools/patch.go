@@ -3,25 +3,112 @@ package tools
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // patch.go produces unified diffs and applies function rewrites in pure Go (no
 // external diff library), so a fix's diff is always generated mechanically from
 // the original and rewritten text — never authored by the LLM.
 
-// ApplyFunctionRewrite replaces the first occurrence of originalFunc in
-// fileContent with newFunc and returns the new file content. It returns an
-// error if originalFunc is not found verbatim.
+const (
+	maxFunctionBytes = 64 << 10
+	maxChangedLines  = 100
+	maxSourceBytes   = 4 << 20
+	maxDiffCells     = 1 << 20
+)
+
+// ApplyFunctionRewrite applies one exact, bounded function edit. Newline style
+// differences are normalized for matching; output preserves the target file's
+// CRLF/LF style. Duplicate source matches are rejected instead of guessing.
 func ApplyFunctionRewrite(fileContent, originalFunc, newFunc string) (string, error) {
-	originalFunc = strings.TrimRight(originalFunc, "\n")
-	if originalFunc == "" {
+	if len(fileContent) > maxSourceBytes {
+		return "", fmt.Errorf("apply: source file exceeds %d byte limit", maxSourceBytes)
+	}
+	if !utf8.ValidString(fileContent) || strings.ContainsRune(fileContent, '\x00') {
+		return "", fmt.Errorf("apply: source file is not valid text")
+	}
+	if !utf8.ValidString(originalFunc) || !utf8.ValidString(newFunc) || strings.ContainsRune(newFunc, '\x00') {
+		return "", fmt.Errorf("apply: function edit is not valid text")
+	}
+	normalizedFile, offsets := normalizeNewlines(fileContent)
+	normalizedOriginal, _ := normalizeNewlines(originalFunc)
+	normalizedOriginal = strings.TrimRight(normalizedOriginal, "\n")
+	normalizedRewrite, _ := normalizeNewlines(newFunc)
+	normalizedRewrite = strings.TrimRight(normalizedRewrite, "\n")
+	if normalizedOriginal == "" {
 		return "", fmt.Errorf("apply: empty original function")
 	}
-	idx := strings.Index(fileContent, originalFunc)
-	if idx < 0 {
+	if normalizedRewrite == "" {
+		return "", fmt.Errorf("apply: empty replacement function")
+	}
+	if len(normalizedOriginal) > maxFunctionBytes || len(normalizedRewrite) > maxFunctionBytes {
+		return "", fmt.Errorf("apply: function exceeds %d byte limit", maxFunctionBytes)
+	}
+	if len(normalizedRewrite) > max(len(normalizedOriginal)*4, len(normalizedOriginal)+4096) {
+		return "", fmt.Errorf("apply: replacement exceeds allowed growth")
+	}
+	originalLines := len(strings.Split(normalizedOriginal, "\n"))
+	rewriteLines := len(strings.Split(normalizedRewrite, "\n"))
+	if originalLines > 0 && rewriteLines > maxDiffCells/originalLines {
+		return "", fmt.Errorf("apply: function diff exceeds complexity limit")
+	}
+	first := strings.Index(normalizedFile, normalizedOriginal)
+	if first < 0 {
 		return "", fmt.Errorf("apply: original function not found in file")
 	}
-	return fileContent[:idx] + strings.TrimRight(newFunc, "\n") + fileContent[idx+len(originalFunc):], nil
+	if strings.Index(normalizedFile[first+len(normalizedOriginal):], normalizedOriginal) >= 0 {
+		return "", fmt.Errorf("apply: original function is ambiguous (multiple exact matches)")
+	}
+	start, end := offsets[first], offsets[first+len(normalizedOriginal)]
+	if start < 0 || end < start || end > len(fileContent) {
+		return "", fmt.Errorf("apply: invalid normalized source offsets")
+	}
+
+	if strings.Contains(fileContent, "\r\n") {
+		normalizedRewrite = strings.ReplaceAll(normalizedRewrite, "\n", "\r\n")
+	}
+	patched := fileContent[:start] + normalizedRewrite + fileContent[end:]
+	if changedLineCount(normalizedOriginal, normalizedRewrite) > maxChangedLines {
+		return "", fmt.Errorf("apply: patch exceeds %d changed-line limit", maxChangedLines)
+	}
+	return patched, nil
+}
+
+func normalizeNewlines(s string) (string, []int) {
+	var b strings.Builder
+	mapOffset := make([]int, 0, len(s)+1)
+	for i := 0; i < len(s); {
+		if s[i] == '\r' {
+			mapOffset = append(mapOffset, i)
+			b.WriteByte('\n')
+			if i+1 < len(s) && s[i+1] == '\n' {
+				i += 2
+			} else {
+				i++
+			}
+			continue
+		}
+		mapOffset = append(mapOffset, i)
+		b.WriteByte(s[i])
+		i++
+	}
+	mapOffset = append(mapOffset, len(s))
+	return b.String(), mapOffset
+}
+
+func changedLineCount(before, after string) int {
+	a, b := strings.Split(before, "\n"), strings.Split(after, "\n")
+	prefix := 0
+	for prefix < len(a) && prefix < len(b) && a[prefix] == b[prefix] {
+		prefix++
+	}
+	suffix := 0
+	for suffix < len(a)-prefix && suffix < len(b)-prefix && a[len(a)-1-suffix] == b[len(b)-1-suffix] {
+		suffix++
+	}
+	// A conservative linear estimate: an edit spanning a large middle section
+	// is counted as all changed, even if some lines inside happen to be equal.
+	return len(a) + len(b) - 2*prefix - 2*suffix
 }
 
 // UnifiedDiff returns a unified diff (with @@ hunk headers and 3 lines of
@@ -34,6 +121,9 @@ func UnifiedDiff(original, modified, filename string) string {
 	}
 	a := splitLinesKeep(original)
 	b := splitLinesKeep(modified)
+	if len(a) > 0 && len(b) > maxDiffCells/len(a) {
+		return ""
+	}
 	ops := lcsDiff(a, b)
 	hunks := groupHunks(ops, 3)
 	if len(hunks) == 0 {
